@@ -16,7 +16,7 @@
 - `find .skills -maxdepth 3 -type f | sort`
 - 人工检查 `.skills/long-task-execution/SKILL.md` 的 frontmatter 和触发范围
 - 人工检查 `.skills/long-task-execution/agents/openai.yaml` 的元数据
-- `rg -n "\\.skills/long-task-execution|long-task-execution" AGENTS.md work/projects work/projects/repo-workflow -S`
+- `rg -n "create_task_scaffold\\.sh|work/projects/README\\.md|work/projects/RALPH\\.md" .skills/long-task-execution/SKILL.md -S`
 - `bash -n .skills/long-task-execution/scripts/ralph_loop.sh`
 - `bash .skills/long-task-execution/scripts/ralph_loop.sh --help`
 - 使用临时 fake agent 验证 `--task-dir` 模式下的 `DONE`
@@ -30,6 +30,7 @@
 - Ralph 循环脚本现在位于 `.skills/long-task-execution/scripts/ralph_loop.sh`
 - 脚本改为通用 `--task-dir` 接口，可被任意项目或 agent 直接复用
 - 根目录 `scripts/ralph_loop.sh` 只保留兼容 wrapper，不再承载真实实现
+- skill 文档现在不再依赖仓库专属指令文件、`work/projects/...` 或 `create_task_scaffold.sh`
 - 仓库协议现在会把长任务优先引导到这个 skill，而不是让所有任务都默认走长任务流程
 
 ## 下一步建议

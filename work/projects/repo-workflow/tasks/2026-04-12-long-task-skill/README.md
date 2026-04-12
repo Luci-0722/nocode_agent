@@ -11,6 +11,7 @@
 - 只在多阶段、长周期任务中使用这个 skill，而不是所有任务都默认启用
 - 把项目确认、任务档案和 Ralph 循环规则放到同一个入口
 - 让 skill 对任意项目或 agent 都可直接复用
+- 让 skill 不依赖 `AGENTS.md`、仓库 workflow 文档或仓库专属脚手架
 
 ## 范围
 
@@ -26,6 +27,7 @@
 - 不把 skill 变成所有任务的默认工作流
 - 不替代已有 `work/projects/RALPH.md` 和任务档案文档
 - 不把 skill 锁死在当前仓库的 `work/projects/` 布局上
+- 不要求其他仓库必须存在 `AGENTS.md` 或 `create_task_scaffold.sh`
 
 ## 起始信息
 
@@ -63,4 +65,5 @@
 - skill 明确限制只用于长任务，不用于普通短任务
 - skill 中包含项目确认、任务档案和 Ralph 循环规则
 - skill 自带脚本可以脱离当前仓库目录结构直接复用
+- skill 说明不再把 `AGENTS.md` 或仓库脚手架当作前置依赖
 - 相关协议和项目状态已同步更新

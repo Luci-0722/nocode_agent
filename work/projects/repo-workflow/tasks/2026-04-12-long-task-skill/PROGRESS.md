@@ -20,6 +20,7 @@
 - 已把 Ralph 循环脚本收口到 skill 自带 `scripts/ralph_loop.sh`
 - 已把根目录 `scripts/ralph_loop.sh` 改为兼容 wrapper
 - 已验证 skill 脚本可在任意 `--task-dir` 下运行，不依赖当前仓库目录结构
+- 已把 skill 说明改为不依赖 `AGENTS.md`、`work/projects/...` 或仓库专属脚手架
 
 ## 进行中
 
@@ -36,6 +37,7 @@
 - `allow_implicit_invocation` 保持开启，但通过窄描述限制触发范围
 - skill 脚本必须放在 skill 目录里，保证它是自包含、可迁移的
 - skill 脚本参数改为 `--task-dir`，避免硬编码依赖当前仓库的 `work/projects/` 结构
+- skill 文档只把仓库特定工作流当作可选适配层，不当作必需前置条件
 
 ## 风险与阻塞
 

@@ -7,11 +7,13 @@ description: Use when the user asks to continue or execute a multi-stage, long-r
 
 Use this skill only for long-running work that should be treated as a project or task line, not for normal single-turn edits.
 
+This skill is self-contained. It does not require repo-specific instruction files, workflow docs, or scaffold scripts in order to work.
+
 ## Read Order
 
-1. Read any repo-level instructions such as `AGENTS.md`, `CLAUDE.md`, or local handoff docs if they exist.
-2. Read any project, track, or task-board docs that define the current long task.
-3. Read the current task dossier or working directory if one already exists.
+1. Read the user request and identify whether the task is truly multi-stage and long-running.
+2. Read any existing task dossier or task workspace if one already exists.
+3. Read repo-level docs only as supplemental context when they exist; they are optional, not required by this skill.
 
 ## Project Selection
 
@@ -25,18 +27,16 @@ Never silently guess ownership when multiple tracks are plausible.
 
 ## Task Dossier Workflow
 
-- If the repo already has a task dossier or project-tracking workflow, follow it.
-- Otherwise create or reuse a dedicated task workspace directory for the long task.
-- If the current repo uses the `work/projects/<project-id>/tasks/<task-id>/` layout, continue an existing unfinished task when it matches the current work.
-- In repos without a built-in workflow, create a lightweight task workspace such as `.ai/tasks/<task-id>/` and keep progress notes there.
-- For repos that use the current repository's workflow, create a new task with:
-
-```bash
-bash scripts/create_task_scaffold.sh <project-id> <task-id> "<task-title>"
-```
-
+- Continue an existing unfinished task workspace when it matches the current work.
+- Otherwise create a dedicated task workspace directory for the long task.
+- If the repo already has its own workflow, reuse it.
+- If the repo does not have one, create a lightweight task workspace such as `.ai/tasks/<task-id>/`.
+- The minimal self-contained dossier format is:
+  - `README.md`: goal, scope, non-goals, completion criteria
+  - `PROGRESS.md`: current state, completed work, in-progress work, blockers
+  - `RESULT.md`: verification, commit info, outcome, next-step advice
 - Fill in the task notes before coding.
-- After each independent work item, update the task notes and any project-level status source the repo expects.
+- After each independent work item, update the task notes and any optional repo-level status source the repo expects.
 - Commit once per independent work item.
 
 ## Execution Mode

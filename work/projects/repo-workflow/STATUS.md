@@ -18,12 +18,13 @@
 - 已新增“项目归属需先确认”的协议规则
 - 已新增仓库内 `long-task-execution` skill
 - 已把 Ralph 循环脚本收口到 skill 自带 `scripts/ralph_loop.sh`
+- 已把 `long-task-execution` 改成真正自包含的 skill，不再依赖 `AGENTS.md` 或仓库专属脚手架
 - 已把 `reactagent-refactor` 迁到 `work/projects/reactagent-refactor/`
 - 已建立 `repo-workflow` 项目与当前任务档案
 
 ## 当前接力点
 
-- 长任务 skill 已自包含，后续应继续收紧结构化输出模板和自检
+- 长任务 skill 已自包含，后续应继续补任务模板与结构化输出模板
 
 ## 下一优先任务
 
@@ -40,4 +41,5 @@
 - `f04148f` docs: adopt project-task workflow for Ralph
 - `add5f95` feat: add Ralph loop supervisor script
 - `2be916a` docs: require project confirmation before task creation
+- `0838724` feat: add long-task execution skill
 - 当前工作项：新增长任务执行 skill（见当前提交）
