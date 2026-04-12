@@ -85,20 +85,30 @@ VERIFY: pytest -q
 - 状态文件：`work/projects/<project-id>/tasks/<task-id>/LOOP_STATE.json`
 - 日志目录：`work/projects/<project-id>/tasks/<task-id>/logs/ralph-loop/`
 
-仓库内最小外层循环脚本：
+仓库内长任务 skill 自带循环脚本：
 
 ```bash
-bash scripts/ralph_loop.sh \
-  --project <project-id> \
-  --task <task-id> \
+bash .skills/long-task-execution/scripts/ralph_loop.sh \
+  --task-dir <task-dir> \
+  --project-id <project-id> \
+  --task-id <task-id> \
   --max-iterations 5 \
   -- <agent-command...>
 ```
+
+在当前仓库中，`<task-dir>` 通常对应：
+
+```text
+work/projects/<project-id>/tasks/<task-id>/
+```
+
+根目录的 `scripts/ralph_loop.sh` 只是兼容 wrapper，真正实现位于 skill 目录下。
 
 脚本会向 agent 命令注入以下环境变量：
 
 - `RALPH_PROJECT_ID`
 - `RALPH_TASK_ID`
+- `RALPH_TASK_DIR`
 - `RALPH_ITERATION`
 - `RALPH_MAX_ITERATIONS`
 - `RALPH_STATE_FILE`

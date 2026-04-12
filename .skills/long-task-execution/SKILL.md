@@ -1,50 +1,42 @@
 ---
 name: long-task-execution
-description: Use when the user asks to continue or execute a multi-stage, long-running engineering task that spans multiple commits, sessions, or checkpoints, such as refactors, staged migrations, release hardening, or other long tasks. This skill handles project selection, mandatory user confirmation when project mapping is ambiguous, task dossier creation or continuation under work/projects/, Ralph loop usage via scripts/ralph_loop.sh, structured STATUS output, and per-stage documentation plus commit updates. Do not use for one-shot bugfixes, small edits, casual Q&A, or short tasks that fit in a single bounded work item.
+description: Use when the user asks to continue or execute a multi-stage, long-running engineering task that spans multiple commits, sessions, or checkpoints, such as refactors, staged migrations, release hardening, or other long tasks. This skill is self-contained and reusable across repos and agents: it handles project or task-line selection, mandatory user confirmation when ownership is ambiguous, task workspace or dossier continuation, bundled Ralph loop execution via its own scripts/ralph_loop.sh, structured STATUS output, and per-stage documentation plus commit updates. Do not use for one-shot bugfixes, small edits, casual Q&A, or short tasks that fit in a single bounded work item.
 ---
 
 # Long Task Execution
 
-Use this skill only for long-running work that should be treated as a project task line, not for normal single-turn edits.
+Use this skill only for long-running work that should be treated as a project or task line, not for normal single-turn edits.
 
 ## Read Order
 
-1. Read `AGENTS.md`.
-2. Read `work/projects/README.md`.
-3. Read `work/projects/RALPH.md`.
-4. Read candidate project `README.md`, `STATUS.md`, and `TASK_BOARD.md`.
-5. Read the current task dossier if one already exists.
+1. Read any repo-level instructions such as `AGENTS.md`, `CLAUDE.md`, or local handoff docs if they exist.
+2. Read any project, track, or task-board docs that define the current long task.
+3. Read the current task dossier or working directory if one already exists.
 
 ## Project Selection
 
-Use this priority order:
+Use this priority order when a repo has multiple long-task lines:
 
 1. If the user explicitly names a project, use it.
 2. If the request maps uniquely to one existing project, use it.
 3. If the request does not map uniquely, ask the user to confirm the project before creating a task or changing code.
 
-Never default ambiguous work to `reactagent-refactor`.
-
-Current repo project roles:
-
-- `reactagent-refactor`: product code refactors, engineering hardening, runtime and packaging work for `nocode_agent`
-- `repo-workflow`: repository workflow, task dossier protocol, Ralph rules, skills, and related scripts
+Never silently guess ownership when multiple tracks are plausible.
 
 ## Task Dossier Workflow
 
-- Before coding, continue an existing unfinished task under `work/projects/<project-id>/tasks/` when it matches the current work.
-- Otherwise create a new task with:
+- If the repo already has a task dossier or project-tracking workflow, follow it.
+- Otherwise create or reuse a dedicated task workspace directory for the long task.
+- If the current repo uses the `work/projects/<project-id>/tasks/<task-id>/` layout, continue an existing unfinished task when it matches the current work.
+- In repos without a built-in workflow, create a lightweight task workspace such as `.ai/tasks/<task-id>/` and keep progress notes there.
+- For repos that use the current repository's workflow, create a new task with:
 
 ```bash
 bash scripts/create_task_scaffold.sh <project-id> <task-id> "<task-title>"
 ```
 
-- Fill in the task `README.md` before coding.
-- After each independent work item, update:
-  - task `PROGRESS.md`
-  - task `RESULT.md`
-  - project `STATUS.md`
-  - project `TASK_BOARD.md`
+- Fill in the task notes before coding.
+- After each independent work item, update the task notes and any project-level status source the repo expects.
 - Commit once per independent work item.
 
 ## Execution Mode
@@ -55,16 +47,19 @@ Use one of these modes:
   - Use when the current turn can complete one clear work item.
 - Ralph loop:
   - Use when the user wants autonomous multi-round execution or the task clearly benefits from repeated continue/verify cycles.
-  - Start from an existing task dossier.
+  - Start from an existing task dossier or task workspace directory.
   - Use:
 
 ```bash
-bash scripts/ralph_loop.sh \
-  --project <project-id> \
-  --task <task-id> \
+bash .skills/long-task-execution/scripts/ralph_loop.sh \
+  --task-dir <task-dir> \
+  --project-id <project-id> \
+  --task-id <task-id> \
   --max-iterations <n> \
   -- <agent-command...>
 ```
+
+The bundled script is self-contained and does not require the current repo's `work/projects/` structure.
 
 ## Structured Status Output
 
@@ -72,7 +67,7 @@ When the work is running inside the Ralph loop, end each round with:
 
 ```text
 STATUS: CONTINUE
-PROJECT_ID: <project-id>
+PROJECT_ID: <project-id-or-track>
 TASK_ID: <task-id>
 COMMIT_DONE: yes|no
 NEXT_ACTION: <next step>

@@ -17,12 +17,19 @@
 - 人工检查 `.skills/long-task-execution/SKILL.md` 的 frontmatter 和触发范围
 - 人工检查 `.skills/long-task-execution/agents/openai.yaml` 的元数据
 - `rg -n "\\.skills/long-task-execution|long-task-execution" AGENTS.md work/projects work/projects/repo-workflow -S`
+- `bash -n .skills/long-task-execution/scripts/ralph_loop.sh`
+- `bash .skills/long-task-execution/scripts/ralph_loop.sh --help`
+- 使用临时 fake agent 验证 `--task-dir` 模式下的 `DONE`
+- 使用临时 fake agent 验证 `--task-dir` 模式下超轮次转 `BUDGET_EXCEEDED`
 
 ## 结果说明
 
 - 已把长任务执行协议收口为仓库内 skill：`.skills/long-task-execution/`
 - skill 明确只用于多阶段、长周期、需要任务档案和阶段检查点的任务
 - skill 内部已经绑定项目确认规则、任务档案流程、Ralph 循环脚本和结构化状态输出模板
+- Ralph 循环脚本现在位于 `.skills/long-task-execution/scripts/ralph_loop.sh`
+- 脚本改为通用 `--task-dir` 接口，可被任意项目或 agent 直接复用
+- 根目录 `scripts/ralph_loop.sh` 只保留兼容 wrapper，不再承载真实实现
 - 仓库协议现在会把长任务优先引导到这个 skill，而不是让所有任务都默认走长任务流程
 
 ## 下一步建议

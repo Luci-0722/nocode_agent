@@ -17,6 +17,9 @@
 - 已新增 `.skills/long-task-execution/agents/openai.yaml`
 - 已在仓库协议中声明：只在多阶段长任务时优先使用该 skill
 - 已同步更新 `repo-workflow` 的项目状态和任务板
+- 已把 Ralph 循环脚本收口到 skill 自带 `scripts/ralph_loop.sh`
+- 已把根目录 `scripts/ralph_loop.sh` 改为兼容 wrapper
+- 已验证 skill 脚本可在任意 `--task-dir` 下运行，不依赖当前仓库目录结构
 
 ## 进行中
 
@@ -31,6 +34,8 @@
 - skill 只用于多阶段长任务，不用于普通短任务
 - skill 负责把项目确认、任务档案、Ralph 循环和结构化状态输出绑在一起
 - `allow_implicit_invocation` 保持开启，但通过窄描述限制触发范围
+- skill 脚本必须放在 skill 目录里，保证它是自包含、可迁移的
+- skill 脚本参数改为 `--task-dir`，避免硬编码依赖当前仓库的 `work/projects/` 结构
 
 ## 风险与阻塞
 
