@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nocode-agent"
+dynamic = ["version"]
+description = "Standalone NoCode coding agent runtime."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "PyYAML>=6.0",
+  "httpx>=0.27",
+  "aiosqlite>=0.20",
+  "pydantic>=2.7",
+  "typing_extensions>=4.12",
+  "langchain>=0.3",
+  "langchain-openai>=0.3",
+  "langchain-anthropic>=0.3",
+  "langgraph>=0.4",
+  "langgraph-checkpoint-sqlite>=2.0",
+  "langchain-mcp-adapters>=0.2",
+  "agent-client-protocol>=0.8",
+]
+
+[tool.setuptools.dynamic]
+version = { attr = "nocode_agent.__version__" }
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["nocode_agent*"]
+
+[tool.setuptools.package-data]
+nocode_agent = [
+  "bundled_skills/*/SKILL.md",
+  "bundled_skills/*/references/*.md",
+  "bundled_skills/*/templates/*.sh",
+]

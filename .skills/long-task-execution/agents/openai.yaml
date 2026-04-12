@@ -1,0 +1,7 @@
+interface:
+  display_name: "Long Task Execution"
+  short_description: "多阶段长期任务的项目确认、任务档案与 Ralph 循环规范"
+  default_prompt: "Use $long-task-execution to continue this multi-stage long-running task with project confirmation, task dossiers, and Ralph loop rules."
+
+policy:
+  allow_implicit_invocation: true

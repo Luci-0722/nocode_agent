@@ -1,0 +1,8 @@
+.state/
+nocode_agent/.state/
+__pycache__/
+.venv/
+.idea/
+.DS_Store
+config.yaml
+*.egg-info/

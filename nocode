@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+resolve_script_dir() {
+  local source_path="${BASH_SOURCE[0]}"
+
+  # 支持通过 symlink 调用，持续解析到真实脚本位置。
+  while [[ -L "$source_path" ]]; do
+    local source_dir
+    source_dir="$(cd -P "$(dirname "$source_path")" && pwd)"
+    source_path="$(readlink "$source_path")"
+    if [[ "$source_path" != /* ]]; then
+      source_path="$source_dir/$source_path"
+    fi
+  done
+
+  cd -P "$(dirname "$source_path")" && pwd
+}
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "未找到 node，请先安装 Node.js。" >&2
+  exit 1
+fi
+
+project_dir="$(resolve_script_dir)"
+
+# 启动器绑定到当前仓库，不能继承外部残留的旧项目根。
+export NOCODE_PROJECT_DIR="$project_dir"
+
+exec node "$project_dir/frontend/tui.ts" "$@"

@@ -1,0 +1,127 @@
+# GLM 默认配置
+model: glm-5.1
+base_url: "https://open.bigmodel.cn/api/coding/paas/v4"
+api_key: "YOUR_API_KEY_HERE"
+
+## 阿里百炼（OpenAI 兼容模式）
+# model: qwen3-coder-plus
+# base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+# 推荐使用环境变量，避免把密钥写入文件：
+# export DASHSCOPE_API_KEY="YOUR_DASHSCOPE_API_KEY"
+
+## 阿里百炼 Coding Plan（专用 key 通常以 sk-sp- 开头）
+# 当前运行时已同时支持 OpenAI 兼容和 Anthropic 风格协议。
+# 如使用 glm/qwen 等 OpenAI 兼容模型，优先使用这个地址。
+# 注意：base_url 只填基地址，不要填成 `/chat/completions` 这种完整接口路径。
+# model: glm-5
+# base_url: "https://coding.dashscope.aliyuncs.com/v1"
+# api_key: "YOUR_SK_SP_API_KEY"
+
+## 阿里百炼 Claude Code 代理（Anthropic 风格 URL）
+# 如使用 Anthropic 风格接口，可配置这个地址。
+# model: claude-sonnet-4-5
+# base_url: "https://coding.dashscope.aliyuncs.com/apps/anthropic"
+# 推荐使用环境变量，避免把密钥写入文件：
+# export ANTHROPIC_API_KEY="YOUR_SK_SP_API_KEY"
+
+## Ollama 本地配置
+# model: qwen2.5-coder:14b
+# base_url: "http://127.0.0.1:11434/v1"
+
+# HTTP/HTTPS 代理，留空或不设置则不使用代理
+# 支持 http:// 和 socks5:// 协议
+# proxy: "http://127.0.0.1:7890"
+# proxy: "socks5://127.0.0.1:1080"
+#
+# 如需配置不走代理的域名/主机，可使用 no_proxy：
+# no_proxy:
+#   - localhost
+#   - 127.0.0.1
+#   - .internal.company.com
+#
+# 也支持对象写法：
+# proxy:
+#   url: "http://127.0.0.1:7890"
+#   no_proxy:
+#     - localhost
+#     - 127.0.0.1
+
+# 模型请求超时（秒）。默认 90 秒，避免长时间卡住无反馈。
+request_timeout: 90
+
+# 日志级别。默认 INFO；如需更多细节可改为 DEBUG。
+log_level: INFO
+
+max_tokens: 4096
+temperature: 0.7
+subagent_model: glm-5.1
+# subagent_model: qwen2.5-coder:14b
+subagent_temperature: 0.7
+
+checkpoint_db_path: ".state/langgraph-checkpoints.sqlite"
+acp_sessions_path: ".state/acp-sessions.json"
+
+compression:
+  # ── Layer 1: 微压缩 ─────────────────────────────
+  trigger_token_percent: 0.60
+  trigger_tool_percent: 0.60
+  keep_recent_tools: 5
+  compressible_tools:
+    - read
+    - bash
+    - glob
+    - list_dir
+    - grep
+    - write
+    - edit
+    - web_search
+    - web_fetch
+    - ask_user_question
+    - delegate_code
+
+skills:
+  enabled: true
+  shell_timeout: 10
+  listing_budget_percent: 0.01
+  listing_max_desc_chars: 250
+  restore_max_per_skill: 5000
+  restore_total_budget: 25000
+
+auto_compact:
+  # ── Layer 3: LLM 总结压缩 ──────────────────────
+  enabled: true
+  trigger_percent: 0.80
+  reserved_output_tokens: 4096
+  buffer_tokens: 13000
+  max_summary_tokens: 16000
+  max_consecutive_failures: 3
+  max_files_to_restore: 5
+  max_tokens_per_file: 20000
+  total_file_budget: 200000
+
+session_memory:
+  # ── Layer 2: 会话记忆 ──────────────────────────
+  enabled: true
+  min_tokens_to_init: 10000
+  min_tokens_between_updates: 5000
+  min_tool_calls_between_updates: 3
+  max_total_tokens: 12000
+  storage_path: ".state/session-memory"
+
+permissions:
+  # ── Human-in-the-loop 工具审批 ─────────────────
+  enabled: true
+  description_prefix: "以下工具调用需要用户审批"
+  interrupt_on:
+    write:
+      allowed_decisions: [approve, reject]
+    edit:
+      allowed_decisions: [approve, reject]
+    bash:
+      allowed_decisions: [approve, reject]
+    web_fetch:
+      allowed_decisions: [approve, reject]
+    web_search:
+      allowed_decisions: [approve, reject]
+    delegate_code:
+      allowed_decisions: [approve, reject]

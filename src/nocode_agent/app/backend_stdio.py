@@ -1,0 +1,261 @@
+"""Persistent stdio backend for the TypeScript TUI frontend."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import sys
+from typing import Any
+
+from nocode_agent.persistence import (
+    list_threads,
+    load_thread_messages,
+    resolve_checkpoint_path,
+)
+from nocode_agent.runtime.bootstrap import (
+    configure_runtime_logging,
+    create_agent_from_config,
+    load_runtime_config,
+)
+
+logger = logging.getLogger(__name__)
+
+_stream_task: asyncio.Task | None = None
+
+
+async def _build_agent(config: dict[str, Any]):
+    return await create_agent_from_config(
+        config,
+        thread_id=os.environ.get("NOCODE_THREAD_ID") or None,
+    )
+
+
+def _emit(event: dict[str, Any]) -> None:
+    sys.stdout.write(json.dumps(event, ensure_ascii=False) + "\n")
+    sys.stdout.flush()
+
+
+def _build_status_event(agent, config: dict[str, Any], event_type: str = "status") -> dict[str, Any]:
+    """构建发给 TUI 的状态快照。"""
+    context_window = max(1, int(getattr(agent, "context_window", 128_000) or 128_000))
+    return {
+        "type": event_type,
+        "thread_id": agent.thread_id,
+        "model": agent.model_name,
+        "subagent_model": agent.subagent_model_name,
+        "reasoning_effort": getattr(agent, "reasoning_effort", ""),
+        "cwd": os.getcwd(),
+        "context_window": context_window,
+        "tokens_left_percent": 100,
+    }
+
+
+async def _stream_prompt(agent, prompt: str, config: dict[str, Any]) -> None:
+    logger.info("Prompt started: thread=%s, chars=%d", getattr(agent, "thread_id", "-"), len(prompt))
+    try:
+        async for event_type, *data in agent.chat(prompt):
+            if event_type == "runtime_event":
+                payload = data[0] if data else {}
+                if isinstance(payload, dict):
+                    _emit(payload)
+            elif event_type == "text":
+                _emit({"type": "text", "delta": data[0]})
+            elif event_type == "retry":
+                _emit(
+                    {
+                        "type": "retry",
+                        "message": str(data[0]),
+                        "attempt": data[1],
+                        "max_retries": data[2],
+                        "delay": data[3],
+                    }
+                )
+            elif event_type == "tool_start":
+                name = data[0]
+                args = data[1] if len(data) > 1 else {}
+                tool_call_id = data[2] if len(data) > 2 else ""
+                _emit(
+                    {
+                        "type": "tool_start",
+                        "name": name,
+                        "args": args,
+                        "tool_call_id": tool_call_id,
+                    }
+                )
+                if name == "ask_user_question":
+                    qs = args.get("questions", [])
+                    logger.info("ask_user_question detected, questions=%s", qs)
+                    _emit(
+                        {
+                            "type": "question",
+                            "questions": qs,
+                            "tool_call_id": tool_call_id,
+                        }
+                    )
+            elif event_type == "tool_end":
+                _emit(
+                    {
+                        "type": "tool_end",
+                        "name": data[0],
+                        "output": data[1] if len(data) > 1 else "",
+                        "tool_call_id": data[2] if len(data) > 2 else "",
+                    }
+                )
+            elif event_type in {"subagent_start", "subagent_tool_start", "subagent_tool_end", "subagent_finish"}:
+                payload = data[0] if data else {}
+                if isinstance(payload, dict):
+                    _emit(payload)
+    except asyncio.CancelledError:
+        logger.info("Prompt cancelled: thread=%s", getattr(agent, "thread_id", "-"))
+        _emit({"type": "cancelled"})
+    except Exception as error:
+        logger.error("Stream error: %s", error, exc_info=True)
+        _emit({"type": "error", "message": f"stream error: {error}"})
+    else:
+        logger.info("Prompt finished: thread=%s", getattr(agent, "thread_id", "-"))
+    _emit(_build_status_event(agent, config))
+    _emit({"type": "done"})
+
+
+async def _handle_message(agent, payload: dict[str, Any], config: dict[str, Any]) -> bool:
+    message_type = payload.get("type")
+
+    if message_type == "clear":
+        await agent.clear()
+        _emit({"type": "cleared", "thread_id": agent.thread_id})
+        return True
+
+    if message_type == "status":
+        _emit(_build_status_event(agent, config))
+        return True
+
+    if message_type == "list_threads":
+        db_path = resolve_checkpoint_path(config)
+        source_filter = str(payload.get("source", "")).strip() or "tui"
+        threads = list_threads(db_path, source=source_filter)
+        _emit({"type": "thread_list", "threads": threads})
+        return True
+
+    if message_type == "resume_thread":
+        target_thread = str(payload.get("thread_id", "")).strip()
+        if not target_thread:
+            _emit({"type": "error", "message": "empty thread_id for resume"})
+            return True
+        agent._thread_id = target_thread
+        _emit(_build_status_event(agent, config, event_type="resumed"))
+        return True
+
+    if message_type == "load_history":
+        db_path = resolve_checkpoint_path(config)
+        messages = load_thread_messages(db_path, thread_id=agent.thread_id)
+        _emit({"type": "history", "messages": messages})
+        return True
+
+    if message_type == "exit":
+        return False
+
+    _emit({"type": "error", "message": f"unknown message type: {message_type}"})
+    return True
+
+
+async def main() -> int:
+    global _stream_task
+    try:
+        config = load_runtime_config()
+        configure_runtime_logging(config)
+        agent = await _build_agent(config)
+    except Exception as error:
+        configure_runtime_logging()
+        logger.error("Fatal error during initialization: %s", error)
+        _emit({"type": "fatal", "message": str(error)})
+        return 1
+
+    _emit(_build_status_event(agent, config, event_type="hello"))
+
+    while True:
+        line = await asyncio.to_thread(sys.stdin.readline)
+        if not line:
+            break
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError as error:
+            logger.warning("Invalid JSON on stdin: %s", error)
+            _emit({"type": "error", "message": f"invalid json: {error}"})
+            continue
+
+        message_type = payload.get("type")
+
+        if message_type == "prompt":
+            prompt = str(payload.get("text", "")).strip()
+            if not prompt:
+                _emit({"type": "error", "message": "empty prompt"})
+                continue
+            if _stream_task and not _stream_task.done():
+                logger.info("Prompt queued: thread=%s, chars=%d", agent.thread_id, len(prompt))
+                await agent.enqueue_user_input(prompt)
+                _emit({"type": "prompt_queued", "text": prompt})
+            else:
+                _stream_task = asyncio.create_task(_stream_prompt(agent, prompt, config))
+            continue
+
+        if message_type == "question_answer":
+            answer = str(payload.get("text", "")).strip()
+            if not answer:
+                _emit({"type": "error", "message": "empty question answer"})
+                continue
+            try:
+                await agent.submit_question_answer(answer)
+            except RuntimeError as error:
+                _emit({"type": "error", "message": str(error)})
+            continue
+
+        if message_type == "permission_decision":
+            request_id = str(payload.get("request_id", "")).strip()
+            decisions = payload.get("decisions", [])
+            if not isinstance(decisions, list) or not decisions:
+                _emit({"type": "error", "message": "empty permission decisions"})
+                continue
+            try:
+                await agent.submit_tool_permission_decision(request_id, decisions)
+            except RuntimeError as error:
+                _emit({"type": "error", "message": str(error)})
+            continue
+
+        if message_type == "cancel":
+            if _stream_task and not _stream_task.done():
+                _stream_task.cancel()
+            else:
+                _emit({"type": "status", "message": "idle"})
+            continue
+
+        should_continue = await _handle_message(agent, payload, config)
+        if not should_continue:
+            break
+
+    if _stream_task and not _stream_task.done():
+        _stream_task.cancel()
+        try:
+            await _stream_task
+        except asyncio.CancelledError:
+            pass
+    return 0
+
+
+def run() -> None:
+    """同步启动入口，供 console script 与 `python -m` 调用。"""
+    raise SystemExit(asyncio.run(main()))
+
+
+__all__ = [
+    "main",
+    "run",
+]
+
+
+if __name__ == "__main__":
+    run()
