@@ -4039,7 +4039,7 @@ class TypeScriptTui {
     const queue = this.pendingPrompts.length > 0 ? `  queue ${this.pendingPrompts.length}` : "";
     const scroll = this.scrollOffset > 0 ? `  ↑${this.scrollOffset}` : "";
     const slashMenu = this.getActiveSlashCommandMenu() ? "  ↑↓ 选命令  Tab 补全" : "";
-    const text = `Enter 发送  Shift+Enter 换行${slashMenu}  Ctrl+O 展开${queue}${scroll}`;
+    const text = `Enter 发送  Shift+Enter 换行${slashMenu}  Ctrl+J/K 选择工具  Ctrl+O 展开${queue}${scroll}`;
     return ["", statusLine, `${COLOR.secondary}${this.truncate(text, width)}${COLOR.reset}`];
   }
 
