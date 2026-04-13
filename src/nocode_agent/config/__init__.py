@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 # 默认配置文件位于当前运行项目根目录；源码仓库与已安装场景共用这套逻辑。
 DEFAULT_CONFIG_PATH = runtime_root() / "config.yaml"
 
+# 全局兜底配置：当项目目录下没有 config.yaml 时，读取 ~/.nocode/config.yaml。
+GLOBAL_CONFIG_PATH = Path.home() / ".nocode" / "config.yaml"
+
 
 def _resolve_proxy_section(config: dict[str, Any]) -> tuple[str, Any]:
     """提取代理主配置，兼容字符串和对象两种写法。"""
@@ -61,6 +64,17 @@ def load_config(config_path: str | None = None) -> dict[str, Any]:
         with open(config_file, encoding="utf-8") as handle:
             return yaml.safe_load(handle) or {}
     except FileNotFoundError:
+        # 项目级配置不存在时，回退到全局配置 ~/.nocode/config.yaml
+        if config_file != GLOBAL_CONFIG_PATH:
+            logger.debug(
+                "Config not found at %s, trying global config at %s",
+                config_file, GLOBAL_CONFIG_PATH,
+            )
+            try:
+                with open(GLOBAL_CONFIG_PATH, encoding="utf-8") as handle:
+                    return yaml.safe_load(handle) or {}
+            except FileNotFoundError:
+                pass
         logger.debug("Config file not found: %s", config_file)
         return {}
 

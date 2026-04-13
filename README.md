@@ -64,9 +64,17 @@ tests/            启动与交互相关冒烟测试
 
 ## 快速开始
 
-1. 安装 Python 包：
+1. 安装 Python 包（建议使用虚拟环境）：
 
 ```bash
+python -m venv .venv
+
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+
+# macOS / Linux
+source .venv/bin/activate
+
 pip install -e .
 ```
 
@@ -85,18 +93,40 @@ cp config.example.yaml config.yaml
 4. 直接启动 TUI：
 
 ```bash
-node frontend/tui.ts
+npx tsx frontend/tui.ts
 ```
 
 恢复历史会话：
 
 ```bash
-node frontend/tui.ts --resume
+npx tsx frontend/tui.ts --resume
 ```
 
 ## 安装启动器
 
-如果你希望在任意目录直接输入 `nocode`：
+安装后可在任意目录直接输入 `nocode` 启动。
+
+### Windows（PowerShell）
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install_nocode_launcher.ps1
+```
+
+脚本会把 `scripts\nocode.ps1` 复制到 `C:\Users\<用户名>\.local\bin\nocode.ps1` 并自动添加到用户 PATH。
+
+安装完成后**打开新的 PowerShell 窗口**，直接运行：
+
+```powershell
+nocode
+```
+
+如需重新安装覆盖已有文件：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install_nocode_launcher.ps1 -Force
+```
+
+### macOS / Linux
 
 ```bash
 bash scripts/install_nocode_launcher.sh
@@ -104,18 +134,42 @@ bash scripts/install_nocode_launcher.sh
 
 脚本会把仓库根目录下的 `nocode` 软链接安装到 `~/.local/bin/nocode`。
 
+安装完成后直接运行：
+
+```bash
+nocode
+```
+
 ## 配置说明
 
-默认配置文件是当前项目根目录下的 `config.yaml`。
+配置文件按以下优先级查找：
 
-仓库提供了 `config.example.yaml`，里面已经包含常见模型配置示例：
+1. 环境变量 `NOCODE_AGENT_CONFIG` / `NOCODE_CONFIG` / `BF_CONFIG` 指定的路径
+2. 项目目录下的 `config.yaml`
+3. 全局配置 `~/.nocode/config.yaml`
+
+安装启动器后，建议将配置放到全局位置，这样在任意目录启动都能生效：
+
+```bash
+# 创建全局配置目录并复制示例配置
+mkdir -p ~/.nocode
+cp config.example.yaml ~/.nocode/config.yaml
+```
+
+然后修改 `~/.nocode/config.yaml`，至少填好模型相关配置：
+
+- `model`
+- `base_url`
+- `api_key`
+
+`config.example.yaml` 中已包含常见模型配置示例：
 
 - GLM / 智谱
 - 阿里百炼 OpenAI 兼容模式
 - 阿里百炼 Anthropic 风格代理
 - Ollama 本地模型
 
-建议优先把密钥放到环境变量中，而不是直接写入仓库内文件。
+建议优先把密钥放到环境变量中，而不是直接写入配置文件。
 
 示例配置默认把 checkpoint、ACP session 和 session memory 写到项目内的 `.state/` 路径下；如果你有自己的目录约定，也可以通过配置或环境变量覆盖。
 
