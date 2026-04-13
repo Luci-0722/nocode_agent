@@ -1,160 +1,155 @@
 # nocode_agent
 
-单独的 NoCode agent 包。
+`nocode_agent` 是一个独立的 NoCode coding agent 运行时仓库，当前采用 Python backend + TypeScript TUI 的结构。
 
-## 仓库边界
+它的目标很直接：在终端里提供一个可运行、可恢复、可扩展的 coding agent，支持多模型接入、subagent、skills、权限审批，以及长会话压缩。
 
-当前目录现在作为独立项目使用，建议始终在 `nocode_agent/` 目录内执行 `git` 命令。
+## 适合什么场景
 
-- 当前项目目录：`/Users/lucheng/Projects/nocode_agent`
-- 旧父级历史仓库：`/Users/lucheng/Projects/NoCode`
+- 在终端里直接使用 coding agent 处理代码和工程任务
+- 需要一个可本地运行、可改造的 agent runtime
+- 想要按项目隔离配置、状态和 subagent 定义
+- 想在现有实现上继续开发 TUI、backend、skills 或运行时能力
 
-这次拆分采用“独立初始化新 git”的方式：
+## 当前能力
 
-- 当前 `nocode_agent/` 会拥有自己的 `.git/`
-- 父仓库不会被自动改造成 submodule
-- 旧父仓库历史不会自动迁入当前子仓库
+- TypeScript TUI，直接在终端中交互
+- Python stdio backend，前后端职责清晰
+- 支持恢复历史会话
+- 支持项目级和用户级 subagent 发现
+- 支持 skills 发现、恢复与调用
+- 支持工具级 human-in-the-loop 审批
+- backend 启动失败或异常退出时，TUI 会显示 `fatal`、最近 `stderr` 摘要和日志文件路径
+- 支持 session memory 和 auto compact，缓解长上下文膨胀
+- 支持 OpenAI 兼容接口、Anthropic 风格代理接口，以及本地 Ollama
 
-如果后续还要保留旧历史，再单独做一次 `subtree` / `filter-repo` 型历史切分即可。
+## 项目结构
 
-## 当前结构
+```text
+src/nocode_agent/
+  agent/          主 agent 构建与运行
+  app/            stdio backend / ACP server 入口
+  compression/    压缩、auto compact、session memory
+  config/         配置读取与解析
+  log/            日志初始化
+  model/          模型工厂
+  persistence/    checkpoint / 线程历史持久化
+  prompt/         主提示词与上下文拼装
+  runtime/        运行时路径、bootstrap、交互控制
+  skills/         skills 发现、注册、恢复
+  tool/           内建工具实现
+  bundled_skills/ 仓库自带 skills
 
-- 运行时主包：`src/nocode_agent/`
-- 终端前端：`frontend/tui.ts`
-- 默认配置：`config.yaml`
-- 默认状态目录：`.state/`
+frontend/
+  tui.ts
+  input_protocol.ts
+  terminal_utils.ts
 
-当前代码已经完成包内收口：
+.nocode/agents/   项目级 subagent 定义
+tests/            启动与交互相关冒烟测试
+```
 
-- 根目录历史 shim 与旧入口已删除
-- 真实 Python 包已切到 `src/nocode_agent/`
-- 包根散落模块已继续收口到：
-  - `src/nocode_agent/app/`
-  - `src/nocode_agent/runtime/`
-- `skills/`、`compression/`、`bundled_skills/` 已迁入包内
-- 正式 Python 入口统一为 `nocode_agent.*`
-- 已补正式 `pyproject.toml`
+## 环境要求
 
-## 主要子模块
+- Python 3.10+
+- Node.js
 
-- `src/nocode_agent/app/`
-- `src/nocode_agent/agent/`
-- `src/nocode_agent/prompt/`
-- `src/nocode_agent/tool/`
-- `src/nocode_agent/skills/`
-- `src/nocode_agent/compression/`
-- `src/nocode_agent/runtime/`
-- `src/nocode_agent/config/`
-- `src/nocode_agent/log/`
-- `src/nocode_agent/persistence/`
+## 快速开始
 
-## 安装
-
-在仓库根目录执行：
+1. 安装 Python 包：
 
 ```bash
 pip install -e .
 ```
 
-本地私有配置不进版本库：
-
-- 提交中保留 `config.example.yaml`
-- 你自己的 `config.yaml` 会被忽略
-
-如果你希望在终端里直接输入 `nocode` 启动 TUI，再执行：
+2. 准备配置文件：
 
 ```bash
-bash scripts/install_nocode_launcher.sh
+cp config.example.yaml config.yaml
 ```
 
-如果你刚接手这个目录，先确认当前 git 根已经是本目录：
+3. 修改 `config.yaml`，至少填好模型相关配置：
 
-```bash
-git rev-parse --show-toplevel
-```
+- `model`
+- `base_url`
+- `api_key`
 
-期望输出：
-
-```text
-/Users/lucheng/Projects/nocode_agent
-```
-
-## TUI 启动
-
-优先使用全局启动命令：
-
-```bash
-nocode
-```
-
-恢复历史会话：
-
-```bash
-nocode --resume
-```
-
-如果你还没有安装启动命令，也可以在仓库根目录直接执行：
+4. 直接启动 TUI：
 
 ```bash
 node frontend/tui.ts
 ```
 
-或：
+恢复历史会话：
 
 ```bash
 node frontend/tui.ts --resume
 ```
 
-TUI 会自动拉起 Python backend。
+## 安装启动器
 
-如果 backend 启动失败，TUI 现在会直接显示最近的 `stderr` 摘要和日志文件位置。
-
-## 最小验证
-
-执行最小启动冒烟测试：
+如果你希望在任意目录直接输入 `nocode`：
 
 ```bash
-python3 -m unittest discover -s tests -v
+bash scripts/install_nocode_launcher.sh
 ```
 
-## 调试入口
+脚本会把仓库根目录下的 `nocode` 软链接安装到 `~/.local/bin/nocode`。
 
-如果你只想单独调试后端模块，可以显式注入 `src` 后运行：
+## 配置说明
+
+默认配置文件是当前项目根目录下的 `config.yaml`。
+
+仓库提供了 `config.example.yaml`，里面已经包含常见模型配置示例：
+
+- GLM / 智谱
+- 阿里百炼 OpenAI 兼容模式
+- 阿里百炼 Anthropic 风格代理
+- Ollama 本地模型
+
+建议优先把密钥放到环境变量中，而不是直接写入仓库内文件。
+
+示例配置默认把 checkpoint、ACP session 和 session memory 写到项目内的 `.state/` 路径下；如果你有自己的目录约定，也可以通过配置或环境变量覆盖。
+
+常见环境变量：
+
+- `NOCODE_PROJECT_DIR`
+- `NOCODE_STATE_DIR`
+- `NOCODE_AGENT_CONFIG`
+- `NOCODE_LOG_FILE`
+- `NOCODE_PROXY`
+- `NOCODE_NO_PROXY`
+
+## 日志与排障
+
+当 backend 初始化失败或异常退出时，TUI 会直接在界面里展示排障信息，包括：
+
+- `fatal: ...`
+- `最近 stderr:`
+- `日志文件: ...`
+
+这样在启动失败时，不需要额外切换到别的终端就能先看到错误摘要和日志文件位置。
+
+如果你希望显式指定日志文件路径，可以设置：
 
 ```bash
-PYTHONPATH=src python3 -m nocode_agent.app.backend_stdio
+export NOCODE_LOG_FILE=/your/path/nocode.log
 ```
 
-## 默认路径
+## Subagent
 
-- 默认配置文件：当前项目根目录下的 `config.yaml`
-- 默认状态目录：当前项目根目录下的 `.state/`
-- 默认日志文件：当前项目根目录下的 `.state/nocode.log`
-- 可通过环境变量覆盖：
-  - `NOCODE_PROJECT_DIR`
-  - `NOCODE_STATE_DIR`
-  - `NOCODE_AGENT_CONFIG`
+运行时会从以下位置发现 subagent：
 
-## 自定义 Subagent
-
-当前运行时从下面两个目录发现 subagent：
-
-- 项目级：`<project>/.nocode/agents/**/*.md`
+- 项目级：`.nocode/agents/**/*.md`
 - 用户级：`~/.nocode/agents/**/*.md`
 
-当前仓库已经把默认的 `general-purpose`、`Explore`、`Plan`、`verification`
-都放进了项目级 `.nocode/agents/`，Python 侧不再保留第二份内建定义。
-
-同名 agent 的覆盖优先级是：项目级 > 用户级。
-
-最小定义示例：
+最小示例：
 
 ```md
 ---
 name: reviewer
 description: 用于独立审查迁移、接口变更和高风险代码
-tools: [read, grep, bash]
-disallowedTools: [bash]
+tools: [read, grep]
 model: glm-5.1
 ---
 你是一个代码审查子代理。
@@ -164,14 +159,45 @@ model: glm-5.1
 
 字段说明：
 
-- `name`：`delegate_code` 里使用的 `subagent_type`
-- `description`：主代理选择该 agent 时看到的用途说明
-- `tools`：可选，允许的工具列表；省略表示沿用默认工具集
+- `name`：`delegate_code` 使用的 subagent 类型名
+- `description`：主 agent 选择该 subagent 时看到的用途说明
+- `tools`：可选，限制允许的工具
 - `disallowedTools`：可选，显式禁用的工具
 - `model`：可选，覆盖默认 `subagent_model`
 
-## 非目标
+## 开发
 
-- 不包含多会话编排
-- 不包含会话注册表 MCP
-- 不包含 Web UI
+运行最小冒烟测试：
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+单独调试 backend：
+
+```bash
+PYTHONPATH=src python3 -m nocode_agent.app.backend_stdio
+```
+
+TUI、启动器、路径解析、backend 启动相关改动，优先关注：
+
+- `frontend/tui.ts`
+- `frontend/input_protocol.ts`
+- `frontend/terminal_utils.ts`
+- `src/nocode_agent/runtime/paths.py`
+- `tests/test_startup_smoke.py`
+
+## 仓库定位
+
+这个仓库当前专注于 agent runtime 本身，主要包括：
+
+- Python agent/backend
+- 终端 TUI
+- subagent / skills / 权限审批
+- 持久化与长上下文压缩
+
+当前不包含：
+
+- Web UI
+- 多会话编排平台
+- 独立的会话注册表服务
