@@ -9,7 +9,7 @@ from langchain.tools import tool
 from langchain_core.messages import AIMessage, BaseMessage
 from pydantic import BaseModel, Field
 
-from .registry import SUBAGENT_TYPE_DESCRIPTION
+from .registry import build_subagent_type_description
 
 
 def _stringify_message_content(content: object) -> str:
@@ -31,14 +31,16 @@ def _extract_last_ai_text(messages: list[BaseMessage]) -> str:
 
 def make_agent_tool(
     subagents: dict[str, Any],
+    agent_definitions: list[Any] | None = None,
     name: str = "delegate_code",
 ) -> Any:
     """创建多类型子代理委派工具。"""
+    subagent_type_description = build_subagent_type_description(agent_definitions)
 
     class AgentInput(BaseModel):
         subagent_type: str = Field(
             default="general-purpose",
-            description=SUBAGENT_TYPE_DESCRIPTION,
+            description=subagent_type_description,
         )
         task: str = Field(description="要委派给子代理的具体任务。")
         context: str = Field(default="", description="补充上下文，可选。")
@@ -57,9 +59,11 @@ def make_agent_tool(
         """把任务委派给子代理执行。支持多种子代理类型，默认为通用编码代理。"""
         from nocode_agent.tool.kit import _trim_output, logger
 
-        agent = subagents.get(subagent_type) or subagents.get("general-purpose")
+        normalized_type = subagent_type.strip() or "general-purpose"
+        agent = subagents.get(normalized_type)
         if agent is None:
-            return "错误：没有可用的子代理。"
+            available = ", ".join(subagents.keys()) or "(none)"
+            return f"错误：未知子代理类型 {normalized_type}。可选值：{available}"
 
         prompt = task.strip()
         if not prompt:
@@ -73,7 +77,7 @@ def make_agent_tool(
             else f"subagent-{uuid4().hex}"
         )
 
-        logger.info("delegate_code: type=%s, thread=%s", subagent_type, resolved_thread_id)
+        logger.info("delegate_code: type=%s, thread=%s", normalized_type, resolved_thread_id)
 
         result = await agent.ainvoke(
             {"messages": [{"role": "user", "content": prompt}]},

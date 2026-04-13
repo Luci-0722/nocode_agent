@@ -6,33 +6,23 @@ from .context import (
     discover_instruction_files,
     render_instruction_files,
 )
+from .dynamic import DynamicPromptMiddleware
 from .main import (
+    build_agent_listing_section,
     build_dynamic_prompt,
     build_main_system_prompt,
     build_static_prompt,
     get_static_prompt,
 )
-from .subagents import (
-    build_explore_subagent_prompt,
-    build_plan_subagent_prompt,
-    build_subagent_shared_notes,
-    build_subagent_system_prompt,
-    build_verification_subagent_prompt,
-    compose_subagent_prompt,
-)
 
 __all__ = [
     "ContextFile",
+    "DynamicPromptMiddleware",
+    "build_agent_listing_section",
     "build_environment_section",
-    "build_explore_subagent_prompt",
     "build_dynamic_prompt",
     "build_main_system_prompt",
-    "build_plan_subagent_prompt",
     "build_static_prompt",
-    "build_subagent_shared_notes",
-    "build_subagent_system_prompt",
-    "build_verification_subagent_prompt",
-    "compose_subagent_prompt",
     "discover_instruction_files",
     "get_static_prompt",
     "render_instruction_files",

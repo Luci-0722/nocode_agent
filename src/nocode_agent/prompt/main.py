@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from nocode_agent.agent.subagents import describe_agent_tools, get_all_agent_definitions
 from nocode_agent.prompt.context import (
     build_environment_section,
     discover_instruction_files,
@@ -15,13 +16,31 @@ from nocode_agent.skills.registry import get_skill_registry
 _STATIC_PROMPT_CACHE: str | None = None
 
 
+def build_agent_listing_section() -> str:
+    """构建可用子代理列表。"""
+    agent_definitions = get_all_agent_definitions()
+    if not agent_definitions:
+        return ""
+
+    lines = [
+        "# Available subagents",
+        "以下子代理可通过 delegate_code 调用；包含内置与已发现的自定义定义。",
+    ]
+    for agent_definition in agent_definitions:
+        default_marker = "（默认）" if agent_definition.agent_type == "general-purpose" else ""
+        lines.append(
+            f"- {agent_definition.agent_type}{default_marker}: "
+            f"{agent_definition.when_to_use} "
+            f"(工具: {describe_agent_tools(agent_definition)})"
+        )
+    return "\n".join(lines)
+
+
 def build_static_prompt() -> str:
     """构建主系统提示词的静态部分。"""
     return "\n\n".join([
-        (
-            "你是一个交互式编码代理，负责帮助用户完成软件工程任务。"
-            "使用下面的指令和可用工具来协助用户。"
-        ),
+        "你是 nocode_agent，一个交互式编码代理，负责帮助用户完成软件工程任务。"
+        "使用下面的指令和可用工具来协助用户。",
         "# System\n"
         " - 你在普通文本中输出的所有内容都会直接显示给用户。可以使用 GitHub 风格的 Markdown。\n"
         " - 部分高风险工具受人工审批约束。当你尝试调用这些工具时，"
@@ -114,6 +133,10 @@ def build_dynamic_prompt(cwd: Path | None = None) -> str:
     if files:
         sections.append(render_instruction_files(files))
 
+    agent_listing = build_agent_listing_section()
+    if agent_listing:
+        sections.append(agent_listing)
+
     registry = get_skill_registry()
     new_skills = registry.get_new_skills_for_listing()
     if new_skills:
@@ -130,6 +153,7 @@ def build_main_system_prompt(cwd: Path | None = None) -> str:
 
 
 __all__ = [
+    "build_agent_listing_section",
     "build_dynamic_prompt",
     "build_main_system_prompt",
     "build_static_prompt",

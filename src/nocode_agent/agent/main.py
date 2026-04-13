@@ -11,6 +11,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from nocode_agent.model import build_model, resolve_context_window
 from nocode_agent.persistence import CheckpointerManager, resolve_checkpoint_path
+from nocode_agent.prompt import DynamicPromptMiddleware
 from nocode_agent.runtime.interaction import InteractiveSessionBroker
 from nocode_agent.skills.registry import init_skill_registry
 from nocode_agent.skills.tool import invoke_skill
@@ -18,6 +19,7 @@ from nocode_agent.tool import build_core_tools, build_readonly_tools, make_agent
 from .builder import build_mainagent_setup
 from .factory import create_subagent_map, create_supervisor_agent
 from .runtime import MainAgentRuntime
+from .subagents import get_all_agent_definitions, init_agent_registry
 
 logger = logging.getLogger(__name__)
 
@@ -249,11 +251,32 @@ async def create_mainagent(
     core_tools = build_core_tools(interactive_broker.ask_user_question)
     readonly_tools = build_readonly_tools(interactive_broker.ask_user_question)
 
-    # Initialize skill system — discover skills from all sources
+    # Skill system — DynamicPromptMiddleware 会在每次调用时刷新
+    # 这里只做一次初始扫描，确保 invoke_skill 工具可用
     init_skill_registry(Path.cwd())
+    init_agent_registry(Path.cwd())
     skill_tools = [invoke_skill]
     mcp_tools = await _load_mcp_tools(mcp_servers)
     logger.info("Loaded %d MCP tools, %d core tools, %d skill tools", len(mcp_tools), len(core_tools), len(skill_tools))
+
+    subagent_models: dict[str, Any] = {str(subagent_model or model): subagent_llm}
+
+    def _resolve_subagent_model(agent_definition) -> Any:
+        model_name = str(agent_definition.model or subagent_model or model).strip() or str(model)
+        cached = subagent_models.get(model_name)
+        if cached is None:
+            cached = build_model(
+                api_key=api_key,
+                model=model_name,
+                base_url=base_url,
+                temperature=subagent_temperature,
+                max_tokens=max_tokens,
+                proxy=proxy,
+                no_proxy=no_proxy,
+                request_timeout=request_timeout,
+            )
+            subagent_models[model_name] = cached
+        return cached
 
     # ── 创建多类型子代理 ────────────────────────────────────
     subagents_map = create_subagent_map(
@@ -262,14 +285,26 @@ async def create_mainagent(
         readonly_tools=readonly_tools,
         checkpointer=saver,
         middleware=middleware,
+        resolve_model=_resolve_subagent_model,
     )
 
-    tools = [*core_tools, *skill_tools, *mcp_tools, make_agent_tool(subagents_map)]
+    tools = [
+        *core_tools,
+        *skill_tools,
+        *mcp_tools,
+        make_agent_tool(subagents_map, agent_definitions=get_all_agent_definitions()),
+    ]
+
+    # DynamicPromptMiddleware 放在最前面，确保每次调用前刷新 system prompt
+    dynamic_prompt_middleware = DynamicPromptMiddleware(Path.cwd())
+    final_main_middleware = [dynamic_prompt_middleware, *main_middleware]
+
     agent = create_supervisor_agent(
         model=main_llm,
         tools=tools,
         checkpointer=saver,
-        middleware=main_middleware,
+        middleware=final_main_middleware,
+        system_prompt=None,  # 由 DynamicPromptMiddleware 动态注入
     )
 
     reasoning_config = persistence_config.get("reasoning") if isinstance(persistence_config, dict) else {}

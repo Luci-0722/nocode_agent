@@ -6,8 +6,8 @@
 
 当前目录现在作为独立项目使用，建议始终在 `nocode_agent/` 目录内执行 `git` 命令。
 
-- 当前项目目录：`/Users/lucheng/Projects/NoCode/nocode_agent`
-- 父级历史仓库：`/Users/lucheng/Projects/NoCode`
+- 当前项目目录：`/Users/lucheng/Projects/nocode_agent`
+- 旧父级历史仓库：`/Users/lucheng/Projects/NoCode`
 
 这次拆分采用“独立初始化新 git”的方式：
 
@@ -76,7 +76,7 @@ git rev-parse --show-toplevel
 期望输出：
 
 ```text
-/Users/lucheng/Projects/NoCode/nocode_agent
+/Users/lucheng/Projects/nocode_agent
 ```
 
 ## TUI 启动
@@ -134,6 +134,41 @@ PYTHONPATH=src python3 -m nocode_agent.app.backend_stdio
   - `NOCODE_PROJECT_DIR`
   - `NOCODE_STATE_DIR`
   - `NOCODE_AGENT_CONFIG`
+
+## 自定义 Subagent
+
+当前运行时从下面两个目录发现 subagent：
+
+- 项目级：`<project>/.nocode/agents/**/*.md`
+- 用户级：`~/.nocode/agents/**/*.md`
+
+当前仓库已经把默认的 `general-purpose`、`Explore`、`Plan`、`verification`
+都放进了项目级 `.nocode/agents/`，Python 侧不再保留第二份内建定义。
+
+同名 agent 的覆盖优先级是：项目级 > 用户级。
+
+最小定义示例：
+
+```md
+---
+name: reviewer
+description: 用于独立审查迁移、接口变更和高风险代码
+tools: [read, grep, bash]
+disallowedTools: [bash]
+model: glm-5.1
+---
+你是一个代码审查子代理。
+只做审查，不要修改文件。
+重点关注行为回归、边界条件和缺失测试。
+```
+
+字段说明：
+
+- `name`：`delegate_code` 里使用的 `subagent_type`
+- `description`：主代理选择该 agent 时看到的用途说明
+- `tools`：可选，允许的工具列表；省略表示沿用默认工具集
+- `disallowedTools`：可选，显式禁用的工具
+- `model`：可选，覆盖默认 `subagent_model`
 
 ## 非目标
 

@@ -11,6 +11,16 @@
 - 常见实现约定变了，就更新“开发提示”与 “TUI / Terminal 开发提示”
 - 反复出现的新坑，持续追加到“开发注意点（持续维护）”
 
+## 源码仓库
+
+**当前工作目录就是 nocode_agent 的源码仓库。**
+
+你正在运行的 nocode_agent 的源码就在这里。用户在此目录启动 nocode，通常意味着要调试或开发 nocode_agent 本身。
+
+关键路径：
+- 源码入口：`src/nocode_agent/`
+- 运行时路径解析：`src/nocode_agent/runtime/paths.py`
+
 ## 项目概览
 
 `nocode_agent` 是一个独立的 NoCode agent 运行时仓库，当前以 Python 后端 + TypeScript TUI 前端的方式组织。
@@ -22,6 +32,7 @@
 - 启动脚本是根目录 `nocode`
 - 默认配置模板是 `config.example.yaml`
 - 运行时状态默认写入项目根下的 `.state/`
+- subagent 统一从项目 `.nocode/agents/` 和用户 `~/.nocode/agents/` 发现；仓库默认 agent 也已经迁到项目 `.nocode/agents/`
 
 ## 目录结构
 
@@ -46,6 +57,8 @@ frontend/
   tui.ts                 TUI 主入口
   input_protocol.ts      原始输入协议解析
   terminal_utils.ts      终端控制、滚轮、剪贴板等工具
+
+.nocode/agents/          项目级 subagent 定义（运行时发现，仓库默认 agent 也放这里）
 
 scripts/
   install_nocode_launcher.sh
@@ -101,11 +114,15 @@ PYTHONPATH=src python3 -m nocode_agent.app.backend_stdio
 ### 通用提示
 
 - 先看现有实现，再改代码，避免基于猜测补逻辑
+- 定位问题、澄清需求、或连续排障失败时，优先用“费曼式外化”的方式沟通：先用 2-4 句简单说明当前认为系统是怎样工作的、判断依据是什么、还有哪些假设未确认、下一步准备如何验证
+- 这样做的目标是暴露理解缺口并让用户及时纠偏，不是展示完整思维链；简单任务不要过度解释
 - 改动尽量贴近现有架构，减少额外结构债
 - 配置、路径、状态目录相关逻辑优先复用 `src/nocode_agent/runtime/paths.py`
 - 运行时相对路径应锚定项目根，而不是当前 shell 的 `cwd`
 - 涉及配置时，优先参考 `config.example.yaml`
 - 敏感信息不要写进仓库
+- 自定义 subagent 优先放在 `.nocode/agents/*.md`，frontmatter 最少包含 `name` 和 `description`
+- 自定义 subagent 如需限制能力，优先用 `tools` / `disallowedTools`，不要只靠 prompt 约束
 
 ### 测试提示
 

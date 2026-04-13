@@ -14,6 +14,7 @@ from langgraph.types import Command
 from nocode_agent.persistence import CheckpointerManager
 from nocode_agent.runtime.hitl import extract_hitl_request
 from nocode_agent.runtime.interaction import InteractiveSessionBroker
+from .subagents import decode_runtime_subagent_type
 
 logger = logging.getLogger(__name__)
 
@@ -76,13 +77,7 @@ def _render_tool_output(content: Any) -> str:
 
 def _normalize_subagent_type(agent_name: str) -> str:
     """把运行时节点名映射回前端已知的子代理类型。"""
-    mapping = {
-        "subagent_general_purpose": "general-purpose",
-        "subagent_explore": "Explore",
-        "subagent_plan": "Plan",
-        "subagent_verification": "verification",
-    }
-    return mapping.get(agent_name, agent_name or "subagent")
+    return decode_runtime_subagent_type(agent_name)
 
 
 def _subagent_key_from_namespace(namespace: tuple[str, ...]) -> tuple[str, ...]:

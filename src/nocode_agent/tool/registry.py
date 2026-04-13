@@ -83,15 +83,36 @@ def build_readonly_tool_list(all_tools: list[Any]) -> list[Any]:
     return [tool_obj for tool_obj in all_tools if tool_obj.name not in READONLY_BLOCKED_TOOL_NAMES]
 
 
-def build_tools_manifest() -> dict[str, Any]:
+def build_subagent_type_description(agent_definitions: list[Any] | None = None) -> str:
+    """构造 delegate_code 参数说明。"""
+    if not agent_definitions:
+        return SUBAGENT_TYPE_DESCRIPTION
+
+    from nocode_agent.agent.subagents import describe_agent_tools
+
+    lines = ["子代理类型。可选值："]
+    for agent_definition in agent_definitions:
+        default_marker = "（默认）" if getattr(agent_definition, "agent_type", "") == "general-purpose" else ""
+        lines.append(
+            f"- {agent_definition.agent_type}{default_marker}："
+            f"{agent_definition.when_to_use}。工具：{describe_agent_tools(agent_definition)}"
+        )
+    return "\n".join(lines)
+
+
+def build_tools_manifest(subagent_types: list[str] | None = None) -> dict[str, Any]:
     """构造工具 manifest 数据。"""
     return {
         "core_tools": list(CORE_TOOL_NAMES),
         "subagent_tool": SUBAGENT_TOOL_NAME,
-        "subagent_types": list(SUBAGENT_TOOL_TYPES),
+        "subagent_types": subagent_types or list(SUBAGENT_TOOL_TYPES),
     }
 
 
-def dump_tools_manifest_json() -> str:
+def dump_tools_manifest_json(subagent_types: list[str] | None = None) -> str:
     """把工具 manifest 序列化为 JSON。"""
-    return json.dumps(build_tools_manifest(), ensure_ascii=False, indent=2)
+    return json.dumps(
+        build_tools_manifest(subagent_types=subagent_types),
+        ensure_ascii=False,
+        indent=2,
+    )

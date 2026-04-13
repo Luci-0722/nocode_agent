@@ -111,7 +111,11 @@ def build_readonly_tools(
 
 
 def dump_tools_manifest() -> str:
-    return dump_tools_manifest_json()
+    from nocode_agent.agent.subagents import get_all_agent_definitions
+
+    return dump_tools_manifest_json(
+        [agent_definition.agent_type for agent_definition in get_all_agent_definitions()]
+    )
 
 
 __all__ = [
