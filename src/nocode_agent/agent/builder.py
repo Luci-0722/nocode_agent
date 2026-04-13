@@ -38,14 +38,14 @@ def _build_middleware(
         config = CompressionConfig.from_yaml(compression, context_window=context_window)
         middleware.append(MicrocompactMiddleware(config).as_langchain_middleware())
 
-    if auto_compactor or sm_extractor:
-        middleware.append(
-            CompressionLifecycleMiddleware(
-                auto_compactor=auto_compactor,
-                sm_extractor=sm_extractor,
-                context_window=context_window,
-            )
+    # 始终添加 CompressionLifecycleMiddleware 以发送 token_usage 事件
+    middleware.append(
+        CompressionLifecycleMiddleware(
+            auto_compactor=auto_compactor,
+            sm_extractor=sm_extractor,
+            context_window=context_window,
         )
+    )
 
     return middleware
 

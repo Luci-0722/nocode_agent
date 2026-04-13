@@ -50,7 +50,7 @@ class MainAgent:
             agent=self._agent,
             checkpointer=self._checkpointer,
             interactive_broker=self._interactive_broker,
-            thread_id=self._thread_id,
+            main_agent=self,
         )
 
     @staticmethod

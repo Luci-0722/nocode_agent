@@ -79,6 +79,7 @@ def build_model(
             "max_tokens": max_tokens,
             "max_retries": 6,
             "timeout": request_timeout,
+            "stream_usage": True,  # 流式模式下也返回 usage_metadata
         }
         if proxy:
             kwargs["anthropic_proxy"] = proxy
@@ -99,6 +100,7 @@ def build_model(
         "max_tokens": max_tokens,
         "max_retries": 6,
         "timeout": request_timeout,
+        "stream_usage": True,  # 流式模式下也返回 usage_metadata
     }
     if proxy:
         mounts = build_no_proxy_mounts(no_proxy)

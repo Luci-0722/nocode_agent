@@ -26,7 +26,14 @@ def get_context_tokens_from_metadata(messages: list[Any]) -> int:
         if isinstance(msg, AIMessage):
             meta = getattr(msg, "usage_metadata", None)
             if meta and isinstance(meta, dict):
-                return meta.get("input_tokens", 0)
+                input_tokens = meta.get("input_tokens", 0)
+                logger.debug(
+                    "Token usage from metadata: input_tokens=%d, full_meta=%s",
+                    input_tokens,
+                    meta,
+                )
+                return input_tokens
+    logger.debug("No usage_metadata found in messages, returning 0")
     return 0
 
 
@@ -105,6 +112,14 @@ class CompressionLifecycleMiddleware(AgentMiddleware):
         input_tokens = get_context_tokens_from_metadata(messages)
         tokens_left = max(0, self._context_window - input_tokens)
         tokens_left_percent = max(0, min(100, round(tokens_left * 100 / self._context_window)))
+
+        logger.debug(
+            "Token usage report: input_tokens=%d, context_window=%d, tokens_left=%d, tokens_left_percent=%d",
+            input_tokens,
+            self._context_window,
+            tokens_left,
+            tokens_left_percent,
+        )
 
         runtime.stream_writer(
             {
