@@ -1,7 +1,0 @@
-interface:
-  display_name: "Long Task Execution"
-  short_description: "Drive long engineering tasks through a resumable task workspace"
-  default_prompt: "Use $long-task-execution to create or resume a task workspace, keep plan and progress files current, and execute the next bounded step."
-
-policy:
-  allow_implicit_invocation: true
