@@ -170,4 +170,6 @@ PYTHONPATH=src python3 -m nocode_agent.app.backend_stdio
   最小验证：构造一个故意失败的 backend，确认界面能看到 `fatal`、`最近 stderr` 和 `日志文件`。
 
 ## 开发流程
-
+ 1、开始编码前先与用户确认方案
+ 2、编码完成后与用户对齐修改内容
+ 2、用户觉得没问题了，提交commit

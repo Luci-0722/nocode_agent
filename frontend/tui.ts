@@ -120,7 +120,9 @@ type PermissionAction = {
   tool_call_id?: string;
 };
 
-type SlashCommandAction = "help" | "clear" | "session" | "resume" | "quit";
+type PermissionMode = "ask" | "all";
+
+type SlashCommandAction = "help" | "clear" | "session" | "resume" | "permission" | "quit";
 
 type SlashCommandDefinition = {
   action: SlashCommandAction;
@@ -292,6 +294,14 @@ const SLASH_COMMANDS: SlashCommandDefinition[] = [
     acceptsArgs: true,
   },
   {
+    action: "permission",
+    name: "permission",
+    description: "设置工具审批模式",
+    argumentHint: "[ask|all]",
+    acceptsArgs: true,
+    aliases: ["perm"],
+  },
+  {
     action: "quit",
     name: "quit",
     description: "退出 NoCode",
@@ -355,6 +365,7 @@ class TypeScriptTui {
   private otherMode = false;
   private otherText = "";
   private questionAnswers: QuestionAnswer[] = [];
+  private permissionPreference: PermissionMode = "ask";
   private permissionMode = false;
   private pendingPermissionRequestId = "";
   private pendingPermissionActions: PermissionAction[] = [];
@@ -1162,6 +1173,9 @@ class TypeScriptTui {
       case "permission_request":
         this.stopAutoCompact();
         this.flushStreamingToHistory();
+        if (this.tryAutoApprovePermissionRequest(event)) {
+          break;
+        }
         this.permissionMode = true;
         this.pendingPermissionRequestId = event.request_id;
         this.pendingPermissionActions = event.actions;
@@ -1495,11 +1509,48 @@ class TypeScriptTui {
         });
         this.render();
         break;
+      case "permission":
+        this.handlePermissionCommand(args);
+        break;
       default:
         this.pushHistory({ kind: "message", role: "system", content: `unknown command: ${text}` });
         this.render();
         break;
     }
+  }
+
+  private handlePermissionCommand(rawArgs: string): void {
+    const mode = rawArgs.trim().toLowerCase();
+    if (!mode) {
+      this.pushHistory({
+        kind: "message",
+        role: "system",
+        content: `当前工具审批模式: ${this.permissionPreference}\n用法: /permission ask | /permission all`,
+      });
+      this.render();
+      return;
+    }
+
+    if (mode !== "ask" && mode !== "all") {
+      this.pushHistory({
+        kind: "message",
+        role: "system",
+        content: `unsupported permission mode: ${rawArgs}\n可用模式: ask, all`,
+      });
+      this.render();
+      return;
+    }
+
+    this.permissionPreference = mode;
+    const detail = mode === "all"
+      ? "后续工具审批请求将自动批准。"
+      : "后续工具审批请求会逐项询问。";
+    this.pushHistory({
+      kind: "message",
+      role: "system",
+      content: `工具审批模式已切换为 ${mode}\n${detail}`,
+    });
+    this.render();
   }
 
   private pushHistory(message: Omit<Message, "id">): number {
@@ -2042,8 +2093,7 @@ class TypeScriptTui {
     return this.pendingPermissionActions[this.currentPermissionIndex] ?? null;
   }
 
-  private getCurrentPermissionChoices(): Array<"approve" | "reject"> {
-    const action = this.getCurrentPermissionAction();
+  private getPermissionChoices(action: PermissionAction | null): Array<"approve" | "reject"> {
     if (!action) {
       return [];
     }
@@ -2051,6 +2101,82 @@ class TypeScriptTui {
       (item): item is "approve" | "reject" => item === "approve" || item === "reject",
     );
     return choices.length > 0 ? choices : ["approve", "reject"];
+  }
+
+  private getCurrentPermissionChoices(): Array<"approve" | "reject"> {
+    return this.getPermissionChoices(this.getCurrentPermissionAction());
+  }
+
+  private buildPermissionDecision(
+    action: PermissionAction,
+    decisionType: "approve" | "reject",
+  ): PermissionDecision {
+    if (decisionType === "approve") {
+      return { type: "approve" };
+    }
+    return {
+      type: "reject",
+      message: `用户在 TUI 中拒绝了工具调用：${action.name}`,
+    };
+  }
+
+  private describePermissionScope(subagentType = ""): string {
+    return subagentType ? `子代理 ${subagentType}` : "主代理";
+  }
+
+  private formatPermissionDecisionSummary(
+    actions: PermissionAction[] = this.pendingPermissionActions,
+    decisions: PermissionDecision[] = this.permissionDecisions,
+    subagentType = this.permissionSubagentType,
+    mode: PermissionMode | "manual" = "manual",
+  ): string {
+    const parts = actions.map((action, index) => {
+      const decision = decisions[index];
+      const label = decision?.type === "approve" ? "批准" : "拒绝";
+      return `${action.name} → ${label}`;
+    });
+    if (parts.length === 0) {
+      return "未提交任何工具审批结果。";
+    }
+    const scope = this.describePermissionScope(subagentType);
+    const modeSuffix = mode === "all" ? "，自动批准" : "";
+    return `工具审批结果（${scope}${modeSuffix}）\n${parts.join("\n")}`;
+  }
+
+  private tryAutoApprovePermissionRequest(
+    event: Extract<BackendEvent, { type: "permission_request" }>,
+  ): boolean {
+    if (this.permissionPreference !== "all" || event.actions.length === 0) {
+      return false;
+    }
+
+    const blockedAction = event.actions.find((action) => !this.getPermissionChoices(action).includes("approve"));
+    if (blockedAction) {
+      this.pushHistory({
+        kind: "message",
+        role: "system",
+        content: `当前工具审批模式为 all，但 ${blockedAction.name} 不支持自动批准，已转为手动审批。`,
+      });
+      return false;
+    }
+
+    const decisions = event.actions.map((action) => this.buildPermissionDecision(action, "approve"));
+    this.pushHistory({
+      kind: "message",
+      role: "system",
+      content: this.formatPermissionDecisionSummary(
+        event.actions,
+        decisions,
+        event.subagent_type || "",
+        "all",
+      ),
+    });
+    this.sendBackend({
+      type: "permission_decision",
+      request_id: event.request_id,
+      decisions,
+    });
+    return true;
   }
 
   private handlePermissionKeypress(key: readline.Key): void {
@@ -2103,12 +2229,7 @@ class TypeScriptTui {
       return;
     }
 
-    const decision: PermissionDecision = decisionType === "approve"
-      ? { type: "approve" }
-      : {
-          type: "reject",
-          message: `用户在 TUI 中拒绝了工具调用：${action.name}`,
-        };
+    const decision = this.buildPermissionDecision(action, decisionType);
     this.permissionDecisions.push(decision);
 
     if (this.currentPermissionIndex + 1 < this.pendingPermissionActions.length) {
@@ -2133,21 +2254,6 @@ class TypeScriptTui {
       decisions,
     });
     this.render();
-  }
-
-  private formatPermissionDecisionSummary(): string {
-    const parts = this.pendingPermissionActions.map((action, index) => {
-      const decision = this.permissionDecisions[index];
-      const label = decision?.type === "approve" ? "批准" : "拒绝";
-      return `${action.name} → ${label}`;
-    });
-    if (parts.length === 0) {
-      return "未提交任何工具审批结果。";
-    }
-    const scope = this.permissionSubagentType
-      ? `子代理 ${this.permissionSubagentType}`
-      : "主代理";
-    return `工具审批结果（${scope}）\n${parts.join("\n")}`;
   }
 
   private renderPermissionUI(width: number, maxHeight: number): string[] {
@@ -3225,7 +3331,8 @@ class TypeScriptTui {
     const leftText = `${this.tokensLeftPercent}% left`;
     const threadLabel = `thread ${this.threadId.slice(-8) || "--------"}`;
     const cwd = this.tildePath(this.cwd);
-    const text = `${threadLabel} · ${modelLabel || "-"} · ${leftText} · ${cwd}`;
+    const permissionLabel = `perm ${this.permissionPreference}`;
+    const text = `${threadLabel} · ${modelLabel || "-"} · ${leftText} · ${permissionLabel} · ${cwd}`;
     return `${COLOR.secondary}${this.truncate(text, width)}${COLOR.reset}`;
   }
 
@@ -3434,7 +3541,8 @@ class TypeScriptTui {
     // `❯ ` 和续行前缀 `  ` 都占 2 列，光标应落在正文起始列。
     const promptPrefix = 3;
 
-    const row = promptStartRow + visualRowOffset + cursorLine;
+    // ANSI 光标坐标是 1-based；promptStartRow 是 composer 之前的行数，需要再偏移 1 行。
+    const row = promptStartRow + visualRowOffset + cursorLine + 1;
     const col = promptPrefix + cursorColBase;
     process.stdout.write(`\x1b[${row};${Math.max(1, col)}H`);
   }
