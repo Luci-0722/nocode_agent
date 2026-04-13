@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
+
+
+def _project_hash(project_path: Path) -> str:
+    """计算项目路径的唯一标识符。"""
+    # 使用路径的绝对值计算 hash，取前 8 位作为标识
+    path_str = str(project_path.resolve())
+    return hashlib.sha256(path_str.encode()).hexdigest()[:8]
 
 
 def repo_root() -> Path:
@@ -45,8 +53,8 @@ def runtime_root() -> Path:
     """返回当前运行实例应绑定的项目根目录。
 
     优先级：
-    1. `NOCODE_PROJECT_DIR`
-    2. 当前工作目录向上搜索到的仓库根 / `config.yaml`
+    1. `NOCODE_PROJECT_DIR` 环境变量
+    2. 从当前工作目录向上搜索到的包含 `config.yaml` 的目录
     3. 当前工作目录
     """
     configured = os.environ.get("NOCODE_PROJECT_DIR", "").strip()
@@ -58,23 +66,26 @@ def runtime_root() -> Path:
         if (candidate / "config.yaml").exists():
             return candidate
 
-    root = _find_repo_root(cwd)
-    if root is not None:
-        return root
-
     return cwd
 
 
-def state_dir() -> Path:
-    """返回默认状态目录。
+def global_state_root() -> Path:
+    """返回全局状态根目录 ~/.nocode。"""
+    return Path.home() / ".nocode"
 
-    优先使用环境变量 ``NOCODE_STATE_DIR``，否则回落到当前运行项目根目录
-    下的 ``.state``。这样源码仓库与已安装脚本都能得到合理默认值。
+
+def state_dir() -> Path:
+    """返回当前项目的状态目录。
+
+    统一存放在 ~/.nocode/projects/<project-hash>/ 下，按项目隔离。
     """
     configured = os.environ.get("NOCODE_STATE_DIR", "").strip()
     if configured:
         return Path(configured).expanduser().resolve()
-    return runtime_root() / ".state"
+
+    project = runtime_root()
+    project_id = _project_hash(project)
+    return global_state_root() / "projects" / project_id
 
 
 def resolve_runtime_path(path_value: str | os.PathLike[str]) -> Path:

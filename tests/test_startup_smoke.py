@@ -84,7 +84,9 @@ class LauncherSmokeTest(unittest.TestCase):
             self.assertEqual(Path(payload["arg1"]).resolve(), (REPO_ROOT / "frontend" / "tui.ts").resolve())
             self.assertEqual(payload["arg2"], "--resume")
 
-    def test_launcher_overrides_stale_project_root_env(self) -> None:
+    def test_launcher_does_not_set_project_root_env(self) -> None:
+        # 启动器不再设置 NOCODE_PROJECT_DIR，让 backend 根据 cwd 自动解析项目根。
+        # 这样不同项目目录的会话会隔离到各自的 .state 目录。
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
             fake_bin = temp_root / "fake-bin"
@@ -106,6 +108,7 @@ class LauncherSmokeTest(unittest.TestCase):
             env = os.environ.copy()
             env["PATH"] = f"{fake_bin}{os.pathsep}{env.get('PATH', '')}"
             env["FAKE_NODE_OUTPUT"] = str(output_path)
+            # 设置一个陈旧的环境变量，验证启动器不会传递它
             env["NOCODE_PROJECT_DIR"] = "/Users/lucheng/Projects/NoCode"
 
             completed = subprocess.run(
@@ -119,8 +122,9 @@ class LauncherSmokeTest(unittest.TestCase):
             )
 
             self.assertEqual(completed.returncode, 0, msg=completed.stderr)
-            resolved_project_dir = Path(output_path.read_text(encoding="utf-8").strip()).resolve()
-            self.assertEqual(resolved_project_dir, REPO_ROOT.resolve())
+            # 启动器不再设置 NOCODE_PROJECT_DIR，所以输出应该为空
+            output = output_path.read_text(encoding="utf-8").strip()
+            self.assertEqual(output, "")
 
 
 @unittest.skipIf(sys.platform == "win32", "当前冒烟测试依赖 POSIX 只读目录权限")
