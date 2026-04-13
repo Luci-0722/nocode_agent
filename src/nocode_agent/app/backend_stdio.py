@@ -10,6 +10,7 @@ import sys
 from typing import Any
 
 from nocode_agent.persistence import (
+    estimate_thread_tokens,
     list_threads,
     load_thread_messages,
     resolve_checkpoint_path,
@@ -37,6 +38,10 @@ def _emit(event: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
+# 缓存最后一次 token_usage 事件的百分比，避免 status 事件硬编码 100 覆盖真实值。
+_last_tokens_left_percent: int = 100
+
+
 def _build_status_event(agent, config: dict[str, Any], event_type: str = "status") -> dict[str, Any]:
     """构建发给 TUI 的状态快照。"""
     context_window = max(1, int(getattr(agent, "context_window", 128_000) or 128_000))
@@ -48,7 +53,7 @@ def _build_status_event(agent, config: dict[str, Any], event_type: str = "status
         "reasoning_effort": getattr(agent, "reasoning_effort", ""),
         "cwd": os.getcwd(),
         "context_window": context_window,
-        "tokens_left_percent": 100,
+        "tokens_left_percent": _last_tokens_left_percent,
     }
 
 
@@ -59,6 +64,11 @@ async def _stream_prompt(agent, prompt: str, config: dict[str, Any]) -> None:
             if event_type == "runtime_event":
                 payload = data[0] if data else {}
                 if isinstance(payload, dict):
+                    if payload.get("type") == "token_usage":
+                        global _last_tokens_left_percent
+                        _last_tokens_left_percent = max(
+                            0, min(100, payload.get("tokens_left_percent", _last_tokens_left_percent))
+                        )
                     _emit(payload)
             elif event_type == "text":
                 _emit({"type": "text", "delta": data[0]})
@@ -144,6 +154,14 @@ async def _handle_message(agent, payload: dict[str, Any], config: dict[str, Any]
             _emit({"type": "error", "message": "empty thread_id for resume"})
             return True
         agent._thread_id = target_thread
+        # 恢复会话时重新计算 token 占用
+        db_path = resolve_checkpoint_path(config)
+        context_window = max(1, int(getattr(agent, "context_window", 128_000) or 128_000))
+        estimated = estimate_thread_tokens(db_path, target_thread)
+        tokens_left = max(0, context_window - estimated)
+        tokens_left_percent = max(0, min(100, round(tokens_left * 100 / context_window)))
+        global _last_tokens_left_percent
+        _last_tokens_left_percent = tokens_left_percent
         _emit(_build_status_event(agent, config, event_type="resumed"))
         return True
 

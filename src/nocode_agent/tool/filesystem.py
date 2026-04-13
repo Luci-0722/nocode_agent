@@ -148,18 +148,23 @@ class GlobInput(BaseModel):
 
 @tool("glob", args_schema=GlobInput)
 def glob_search(pattern: str) -> str:
-    """在工作区内执行 glob 搜索，返回按修改时间降序排列的文件路径。"""
+    """在工作区内执行 glob 搜索，返回按修改时间降序排列的路径。目录以 `/` 结尾。"""
     from nocode_agent.tool.kit import _trim_output, _workspace_root
 
     root = _workspace_root()
     try:
-        paths = [path for path in root.glob(pattern) if not path.is_dir()]
+        paths = list(root.glob(pattern))
     except Exception:
         paths = []
     paths.sort(key=lambda path: path.stat().st_mtime, reverse=True)
-    matches = [str(path.relative_to(root)) for path in paths]
+    matches = []
+    for path in paths:
+        rel = str(path.relative_to(root))
+        if path.is_dir():
+            rel += "/"
+        matches.append(rel)
     if not matches:
-        return "未找到匹配文件。"
+        return "未找到匹配。"
     return _trim_output("\n".join(matches))
 
 

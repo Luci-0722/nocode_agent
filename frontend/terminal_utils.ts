@@ -5,6 +5,8 @@ export const ENABLE_KITTY_KEYBOARD = "\x1b[>1u";
 export const DISABLE_KITTY_KEYBOARD = "\x1b[<u";
 export const ENABLE_MODIFY_OTHER_KEYS = "\x1b[>4;2m";
 export const DISABLE_MODIFY_OTHER_KEYS = "\x1b[>4m";
+export const ENABLE_BRACKETED_PASTE = "\x1b[?2004h";
+export const DISABLE_BRACKETED_PASTE = "\x1b[?2004l";
 
 // 鼠标跟踪：1000 基础按钮/滚轮，1002 拖拽，1003 全移动，1006 SGR 编码
 export const ENABLE_MOUSE_TRACKING = "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h";

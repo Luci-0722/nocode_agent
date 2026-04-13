@@ -9,6 +9,8 @@ import {
   RawInputParser,
   type RawInputToken,
   SGR_MOUSE_RE,
+  isBracketedPasteEndSequence,
+  isBracketedPasteStartSequence,
   isCtrlCSequence,
   isCtrlJSequence,
   isCtrlKSequence,
@@ -22,9 +24,11 @@ import {
 import {
   computeWheelStep,
   copyTextToNativeClipboard,
+  DISABLE_BRACKETED_PASTE,
   DISABLE_KITTY_KEYBOARD,
   DISABLE_MODIFY_OTHER_KEYS,
   DISABLE_MOUSE_TRACKING,
+  ENABLE_BRACKETED_PASTE,
   ENABLE_KITTY_KEYBOARD,
   ENABLE_MODIFY_OTHER_KEYS,
   ENABLE_MOUSE_TRACKING,
@@ -54,6 +58,22 @@ type ToolCall = {
   expanded: boolean;
   toolCallId?: string;
   subagents?: SubagentRun[];
+};
+
+type LineDiffOp = {
+  type: "equal" | "add" | "remove";
+  text: string;
+};
+
+type ReadSnapshot = {
+  startLine: number;
+  lines: string[];
+};
+
+type DiffExcerptRow = {
+  kind: "context" | "add" | "remove" | "ellipsis";
+  lineNumber?: number;
+  text?: string;
 };
 
 type Message = TextMessage | ToolCall;
@@ -241,7 +261,7 @@ const COLOR = {
   user: "\x1b[38;2;126;217;87m",         // 用户消息 - 绿色
   tool: "\x1b[38;2;255;167;38m",         // 工具调用 - 橙色
   toolBg: "\x1b[48;2;45;35;25m",        // 工具背景 - 深橙
-  selectedBg: "\x1b[48;2;32;48;58m",
+  selectedBg: "\x1b[48;2;45;65;85m",
   selectedBorder: "\x1b[38;2;95;215;175m",
   selectedText: "\x1b[38;2;230;238;242m",
   selectedSubtle: "\x1b[38;2;168;191;201m",
@@ -309,6 +329,20 @@ const SLASH_COMMANDS: SlashCommandDefinition[] = [
   },
 ];
 
+function formatDuration(seconds: number): string {
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (minutes < 60) {
+    return secs > 0 ? `${minutes}m${secs}s` : `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return mins > 0 ? `${hours}h${mins}m` : `${hours}h`;
+}
+
 class TypeScriptTui {
   private static readonly BACKEND_STDERR_CHAR_LIMIT = 4_000;
   private static readonly BACKEND_STDERR_LINE_LIMIT = 12;
@@ -338,6 +372,7 @@ class TypeScriptTui {
   private autoCompactStartedAt = 0;
   private exiting = false;
   private lastFrame = "";
+  private lastSelectionOverlayKey = "";
   private scrollOffset = 0;
   private readonly keyInput = new PassThrough();
   private nextMessageId = 1;
@@ -355,6 +390,10 @@ class TypeScriptTui {
   private sessionPickerIndex = 0;
   private sessionPickerScroll = 0;
   private sessionPickerQuery = "";
+
+  // ── Permission picker state ─────────────────────────────────
+  private showPermissionPicker = false;
+  private permissionPickerIndex = 0;
 
   // ── Question mode state ───────────────────────────────────
   private questionMode = false;
@@ -392,6 +431,8 @@ class TypeScriptTui {
   private readonly rawInputParser = new RawInputParser();
   private mouseTrackingEnabled = false;
   private nativeSelectionMode = false;
+  private bracketedPasteMode = false;
+  private bracketedPasteBuffer = "";
   private nativeSelectionTimer: NodeJS.Timeout | null = null;
   private rawEscapeTimer: NodeJS.Timeout | null = null;
   private generatingAnimationTimer: NodeJS.Timeout | null = null;
@@ -434,10 +475,11 @@ class TypeScriptTui {
     this.backendStderrTail = "";
     this.backendReportedFatal = false;
     this.backendLogPath = this.resolveBackendLogPath(projectDir);
-    const baseBackendEnv = {
-      ...process.env,
-      NOCODE_PROJECT_DIR: projectDir,
-    };
+    // 不再传递 NOCODE_PROJECT_DIR，让 backend 根据 cwd 自动解析项目根。
+    // 这样不同项目目录的会话会隔离到各自的 .state 目录。
+    // 同时删除可能残留的旧环境变量，避免干扰。
+    const baseBackendEnv = { ...process.env };
+    delete baseBackendEnv.NOCODE_PROJECT_DIR;
 
     // 优先使用打包后的后端可执行文件
     const exeDir = path.dirname(process.execPath);
@@ -636,6 +678,35 @@ class TypeScriptTui {
       return; // swallow all other keys while picker is active
     }
 
+    // ── Permission picker mode ──────────────────────────────
+    if (this.showPermissionPicker) {
+      if ((key.ctrl && key.name === "c") || (key.meta && key.name === "c")) {
+        this.closePermissionPicker();
+        this.render();
+        return;
+      }
+      if (key.name === "up") {
+        this.permissionPickerIndex = Math.max(0, this.permissionPickerIndex - 1);
+        this.render();
+        return;
+      }
+      if (key.name === "down") {
+        this.permissionPickerIndex = Math.min(this.permissionOptions.length - 1, this.permissionPickerIndex + 1);
+        this.render();
+        return;
+      }
+      if (key.name === "return") {
+        this.confirmPermissionPicker();
+        return;
+      }
+      if (key.name === "escape") {
+        this.closePermissionPicker();
+        this.render();
+        return;
+      }
+      return; // swallow all other keys while picker is active
+    }
+
     // ── Permission review mode ───────────────────────────
     if (this.permissionMode) {
       this.handlePermissionKeypress(key);
@@ -757,6 +828,9 @@ class TypeScriptTui {
       clearTimeout(this.rawEscapeTimer);
       this.rawEscapeTimer = null;
     }
+    if (this.tryHandleFallbackPasteChunk(chunk)) {
+      return;
+    }
     this.rawInputParser.push(chunk);
     this.handleRawTokens(this.rawInputParser.drain());
     if (this.rawInputParser.hasPendingEscapePrefix()) {
@@ -770,9 +844,20 @@ class TypeScriptTui {
 
   private handleRawTokens(tokens: RawInputToken[]): void {
     for (const token of tokens) {
+      if (this.bracketedPasteMode) {
+        if (token.kind === "control" && isBracketedPasteEndSequence(token.value)) {
+          this.finishBracketedPaste();
+          continue;
+        }
+        this.bracketedPasteBuffer += token.value;
+        continue;
+      }
       if (token.kind === "control") {
         this.handleRawControlSequence(token.value);
       } else {
+        if (this.tryHandlePasteText(token.value)) {
+          continue;
+        }
         this.flushKeyboardInput(token.value);
       }
     }
@@ -786,7 +871,7 @@ class TypeScriptTui {
       this.flushKeyboardInput(chunk);
       return;
     }
-    if (!this.showSessionPicker && !this.permissionMode && !this.questionMode) {
+    if (!this.showSessionPicker && !this.showPermissionPicker && !this.permissionMode && !this.questionMode) {
       if (isCtrlJSequence(chunk)) {
         this.moveToolSelection(1);
         return;
@@ -805,6 +890,11 @@ class TypeScriptTui {
         this.cancelSessionPicker("取消恢复，使用新会话。");
         return;
       }
+      if (this.showPermissionPicker) {
+        this.closePermissionPicker();
+        this.render();
+        return;
+      }
       if (this.copySelectionIfPresent()) {
         return;
       }
@@ -819,8 +909,13 @@ class TypeScriptTui {
       this.handleEscape();
       return;
     }
+    if (isBracketedPasteStartSequence(chunk)) {
+      this.bracketedPasteMode = true;
+      this.bracketedPasteBuffer = "";
+      return;
+    }
     if (isShiftEnterSequence(chunk)) {
-      if (!this.showSessionPicker && !this.permissionMode && !this.questionMode) {
+      if (!this.showSessionPicker && !this.showPermissionPicker && !this.permissionMode && !this.questionMode) {
         this.insertNewline();
       }
       return;
@@ -1056,8 +1151,20 @@ class TypeScriptTui {
   }
 
   private handleEscape(): void {
+    if (this.selectionRanges.length > 0) {
+      this.clearSelection();
+      this.render();
+      return;
+    }
+
     if (this.showSessionPicker) {
       this.cancelSessionPicker("取消恢复，使用新会话。");
+      return;
+    }
+
+    if (this.showPermissionPicker) {
+      this.closePermissionPicker();
+      this.render();
       return;
     }
 
@@ -1116,7 +1223,7 @@ class TypeScriptTui {
         break;
       case "text":
         this.stopAutoCompact();
-        this.streaming += event.delta;
+        this.streaming += this.stripAnsi(event.delta);
         break;
       case "tool_start":
         this.stopAutoCompact();
@@ -1522,12 +1629,7 @@ class TypeScriptTui {
   private handlePermissionCommand(rawArgs: string): void {
     const mode = rawArgs.trim().toLowerCase();
     if (!mode) {
-      this.pushHistory({
-        kind: "message",
-        role: "system",
-        content: `当前工具审批模式: ${this.permissionPreference}\n用法: /permission ask | /permission all`,
-      });
-      this.render();
+      this.openPermissionPicker();
       return;
     }
 
@@ -1616,7 +1718,7 @@ class TypeScriptTui {
   }
 
   private renderGeneratingStatus(width: number): string {
-    if (!this.generating || this.permissionMode || this.questionMode || this.showSessionPicker || width < 12) {
+    if (!this.generating || this.permissionMode || this.questionMode || this.showSessionPicker || this.showPermissionPicker || width < 12) {
       return "";
     }
 
@@ -1627,7 +1729,7 @@ class TypeScriptTui {
     const frameIndex = Math.floor(elapsedMs / 80) % this.generatingSpinnerFrames.length;
     const frame = this.generatingSpinnerFrames[frameIndex] ?? this.generatingSpinnerFrames[0];
     const label = autoCompactActive ? "Compacting" : "Working";
-    const text = `${COLOR.warning}${COLOR.bold}${frame}${COLOR.reset} ${COLOR.bold}${label}${COLOR.reset} ${COLOR.secondary}(${elapsedSeconds}s • esc to interrupt)${COLOR.reset}`;
+    const text = `${COLOR.warning}${COLOR.bold}${frame}${COLOR.reset} ${COLOR.bold}${label}${COLOR.reset} ${COLOR.secondary}(${formatDuration(elapsedSeconds)} • esc to interrupt)${COLOR.reset}`;
     return this.truncateAnsiAware(text, Math.max(12, width));
   }
 
@@ -1665,9 +1767,7 @@ class TypeScriptTui {
     };
     this.history.push(run);
     this.trimHistory();
-    if (this.followLatestTool || this.selectedToolId === null) {
-      this.selectedToolId = run.id;
-    }
+    // 不再自动选中工具，只有用户手动选择时才高亮
   }
 
   private finishToolRun(name: string, output?: string, toolCallId?: string): void {
@@ -1689,16 +1789,12 @@ class TypeScriptTui {
       };
       this.history.push(syntheticRun);
       this.trimHistory();
-      if (this.followLatestTool || this.selectedToolId === null) {
-        this.selectedToolId = syntheticRun.id;
-      }
+      // 不再自动选中工具
       return;
     }
     run.status = "done";
     run.output = output || "";
-    if (this.followLatestTool || this.selectedToolId === run.id || this.selectedToolId === null) {
-      this.selectedToolId = run.id;
-    }
+    // 不再自动选中工具
   }
 
   private findToolRunByToolCallId(toolCallId: string): ToolCall | undefined {
@@ -1972,6 +2068,77 @@ class TypeScriptTui {
     this.render();
   }
 
+  // ── Permission picker ─────────────────────────────────────
+  private readonly permissionOptions: Array<{ mode: PermissionMode; label: string; description: string }> = [
+    {
+      mode: "ask",
+      label: "Ask",
+      description: "每次工具调用前询问确认（推荐）",
+    },
+    {
+      mode: "all",
+      label: "All",
+      description: "自动批准所有工具调用，谨慎使用",
+    },
+  ];
+
+  private openPermissionPicker(): void {
+    const currentIndex = this.permissionOptions.findIndex((opt) => opt.mode === this.permissionPreference);
+    this.permissionPickerIndex = currentIndex >= 0 ? currentIndex : 0;
+    this.showPermissionPicker = true;
+    this.render();
+  }
+
+  private closePermissionPicker(): void {
+    this.showPermissionPicker = false;
+  }
+
+  private confirmPermissionPicker(): void {
+    const selected = this.permissionOptions[this.permissionPickerIndex];
+    if (!selected) {
+      this.closePermissionPicker();
+      return;
+    }
+    this.permissionPreference = selected.mode;
+    this.closePermissionPicker();
+    const detail = selected.mode === "all"
+      ? "后续工具审批请求将自动批准。"
+      : "后续工具审批请求会逐项询问。";
+    this.pushHistory({
+      kind: "message",
+      role: "system",
+      content: `工具审批模式已切换为 ${selected.label}\n${detail}`,
+    });
+    this.render();
+  }
+
+  private renderPermissionPicker(width: number, maxHeight: number): string[] {
+    const lines: string[] = [];
+    lines.push("");
+    lines.push(`${COLOR.accent}${COLOR.bold}  设置工具审批模式${COLOR.reset}`);
+    lines.push("");
+
+    const maxWidth = Math.max(20, width - 4);
+    for (let i = 0; i < this.permissionOptions.length; i++) {
+      const opt = this.permissionOptions[i];
+      const selected = i === this.permissionPickerIndex;
+      const current = opt.mode === this.permissionPreference;
+      const marker = selected ? `${COLOR.accent}›${COLOR.reset} ` : "  ";
+      const currentBadge = current ? ` ${COLOR.secondary}(当前)${COLOR.reset}` : "";
+      const labelColor = selected ? COLOR.bold : "";
+      const labelLine = `${marker}${labelColor}${opt.mode === this.permissionPreference ? COLOR.accent : ""}${opt.label}${COLOR.reset}${currentBadge}`;
+      lines.push(labelLine);
+      const descLines = this.wrap(opt.description, maxWidth - 4);
+      for (const desc of descLines) {
+        lines.push(`    ${COLOR.secondary}${desc}${COLOR.reset}`);
+      }
+      lines.push("");
+    }
+
+    while (lines.length < maxHeight) lines.push("");
+    return lines;
+  }
+
   private openSessionPicker(query = ""): void {
     this.showSessionPicker = true;
     this.sessionPickerQuery = query.trim();
@@ -2130,6 +2297,10 @@ class TypeScriptTui {
     subagentType = this.permissionSubagentType,
     mode: PermissionMode | "manual" = "manual",
   ): string {
+    const scope = this.describePermissionScope(subagentType);
+    if (mode === "all") {
+      return `工具审批结果（${scope}）\n自动批准`;
+    }
     const parts = actions.map((action, index) => {
       const decision = decisions[index];
       const label = decision?.type === "approve" ? "批准" : "拒绝";
@@ -2138,9 +2309,7 @@ class TypeScriptTui {
     if (parts.length === 0) {
       return "未提交任何工具审批结果。";
     }
-    const scope = this.describePermissionScope(subagentType);
-    const modeSuffix = mode === "all" ? "，自动批准" : "";
-    return `工具审批结果（${scope}${modeSuffix}）\n${parts.join("\n")}`;
+    return `工具审批结果（${scope}）\n${parts.join("\n")}`;
   }
 
   private tryAutoApprovePermissionRequest(
@@ -2275,20 +2444,24 @@ class TypeScriptTui {
 
     lines.push("");
     lines.push(`${COLOR.warning}${COLOR.bold}  ! 工具审批${progress}${source}${COLOR.reset}`);
-    lines.push(`${COLOR.bold}  ${action.name}${COLOR.reset}`);
+
+    // description 已包含工具名和参数，直接显示即可
     if (action.description) {
       lines.push("");
       for (const line of this.wrap(action.description, Math.max(20, width - 4))) {
         lines.push(`  ${COLOR.soft}${line}${COLOR.reset}`);
       }
-    }
-
-    lines.push("");
-    lines.push(`${COLOR.secondary}  参数${COLOR.reset}`);
-    const argsText = JSON.stringify(action.args || {}, null, 2) || "{}";
-    for (const rawLine of argsText.split("\n")) {
-      for (const line of this.wrap(rawLine, Math.max(18, width - 6))) {
-        lines.push(`    ${COLOR.dim}${line}${COLOR.reset}`);
+    } else {
+      // 无 description 时回退到单独显示工具名和参数
+      lines.push("");
+      lines.push(`${COLOR.bold}  ${action.name}${COLOR.reset}`);
+      lines.push("");
+      lines.push(`${COLOR.secondary}  参数${COLOR.reset}`);
+      const argsText = JSON.stringify(action.args || {}, null, 2) || "{}";
+      for (const rawLine of argsText.split("\n")) {
+        for (const line of this.wrap(rawLine, Math.max(18, width - 6))) {
+          lines.push(`    ${COLOR.dim}${line}${COLOR.reset}`);
+        }
       }
     }
 
@@ -2571,10 +2744,110 @@ class TypeScriptTui {
     return parts.join("  ");
   }
 
+  private normalizeLineBreaks(text: string): string {
+    return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  }
+
+  private isMultilinePasteCandidate(text: string): boolean {
+    const normalized = this.normalizeLineBreaks(text);
+    const firstLineBreak = normalized.indexOf("\n");
+    if (firstLineBreak === -1 || normalized.length === 1) {
+      return false;
+    }
+    return firstLineBreak < normalized.length - 1 || normalized.slice(0, -1).includes("\n");
+  }
+
+  private isQuestionTextInputActive(): boolean {
+    if (!this.questionMode) {
+      return false;
+    }
+    const question = this.activeQuestions[this.currentQuestionIndex];
+    if (!question) {
+      return false;
+    }
+    const options = question.options || [];
+    return options.length === 0 || this.otherMode;
+  }
+
+  private applyPastedText(text: string): boolean {
+    const normalized = this.normalizeLineBreaks(text);
+    if (!normalized) {
+      return true;
+    }
+    if (this.showSessionPicker) {
+      this.sessionPickerQuery += normalized.replace(/\n+/g, " ");
+      this.refreshSessionPickerThreads();
+      this.render();
+      return true;
+    }
+    if (this.isQuestionTextInputActive()) {
+      this.otherText += normalized.replace(/\n+/g, " ");
+      this.render();
+      return true;
+    }
+    if (this.showPermissionPicker || this.permissionMode || this.questionMode) {
+      return true;
+    }
+    this.insertTextBlock(normalized);
+    return true;
+  }
+
+  private tryHandlePasteText(text: string): boolean {
+    const normalized = this.normalizeLineBreaks(text);
+    if (!this.isMultilinePasteCandidate(normalized)) {
+      return false;
+    }
+    return this.applyPastedText(normalized);
+  }
+
+  private tryHandleFallbackPasteChunk(chunk: string): boolean {
+    if (this.bracketedPasteMode || chunk.includes("\x1b[200~") || chunk.includes("\x1b[201~")) {
+      return false;
+    }
+    const normalized = this.normalizeLineBreaks(chunk);
+    if (!this.isMultilinePasteCandidate(normalized)) {
+      return false;
+    }
+    return this.applyPastedText(normalized);
+  }
+
+  private finishBracketedPaste(): void {
+    const text = this.bracketedPasteBuffer;
+    this.bracketedPasteMode = false;
+    this.bracketedPasteBuffer = "";
+    if (text) {
+      this.applyPastedText(text);
+    }
+  }
+
   private insertText(text: string): void {
     const line = this.inputLines[this.cursorRow];
     this.inputLines[this.cursorRow] = line.slice(0, this.cursorCol) + text + line.slice(this.cursorCol);
     this.cursorCol += text.length;
+    this.render();
+  }
+
+  private insertTextBlock(text: string): void {
+    const normalized = this.normalizeLineBreaks(text);
+    const currentLine = this.inputLines[this.cursorRow] ?? "";
+    const before = currentLine.slice(0, this.cursorCol);
+    const after = currentLine.slice(this.cursorCol);
+    const segments = normalized.split("\n");
+    if (segments.length === 1) {
+      this.inputLines[this.cursorRow] = before + normalized + after;
+      this.cursorCol += normalized.length;
+      this.render();
+      return;
+    }
+
+    const replacementLines = [
+      before + segments[0],
+      ...segments.slice(1, -1),
+      `${segments[segments.length - 1]}${after}`,
+    ];
+    this.inputLines.splice(this.cursorRow, 1, ...replacementLines);
+    this.cursorRow += replacementLines.length - 1;
+    this.cursorCol = segments[segments.length - 1]?.length || 0;
     this.render();
   }
 
@@ -2626,6 +2899,29 @@ class TypeScriptTui {
     this.backend.stdin.write(`${JSON.stringify(payload)}\n`);
   }
 
+  private getSelectionOverlayKey(): string {
+    return this.selectionRanges
+      .map((range) => `${range.row}:${range.startCol}-${range.endCol}`)
+      .join("|");
+  }
+
+  private paintFrame(frame: string): void {
+    if (frame !== this.lastFrame && this.selectionRanges.length > 0 && !this.mouseSelection?.active) {
+      this.clearSelection();
+    }
+
+    const selectionKey = this.getSelectionOverlayKey();
+    if (frame !== this.lastFrame || selectionKey !== this.lastSelectionOverlayKey) {
+      process.stdout.write("\x1b[H\x1b[2J");
+      process.stdout.write(frame);
+      this.lastFrame = frame;
+      this.lastSelectionOverlayKey = selectionKey;
+      return;
+    }
+
+    this.lastSelectionOverlayKey = selectionKey;
+  }
+
   private render(): void {
     const width = process.stdout.columns || 120;
     const height = process.stdout.rows || 40;
@@ -2639,11 +2935,20 @@ class TypeScriptTui {
       ];
       const frameLines = [...header, ...picker, ...footer];
       const frame = frameLines.join("\n");
-      if (frame !== this.lastFrame) {
-        process.stdout.write("\x1b[H\x1b[2J");
-        process.stdout.write(frame);
-        this.lastFrame = frame;
-      }
+      this.paintFrame(frame);
+      this.renderSelectionOverlay();
+      return;
+    }
+
+    if (this.showPermissionPicker) {
+      const picker = this.renderPermissionPicker(width, Math.max(8, height - header.length - 4));
+      const footer = [
+        "",
+        `${COLOR.secondary}↑↓ 选择  Enter 确认  Esc 取消${COLOR.reset}`,
+      ];
+      const frameLines = [...header, ...picker, ...footer];
+      const frame = frameLines.join("\n");
+      this.paintFrame(frame);
       this.renderSelectionOverlay();
       return;
     }
@@ -2656,11 +2961,7 @@ class TypeScriptTui {
       ];
       const frameLines = [...header, ...permissionUI, ...footer];
       const frame = frameLines.join("\n");
-      if (frame !== this.lastFrame) {
-        process.stdout.write("\x1b[H\x1b[2J");
-        process.stdout.write(frame);
-        this.lastFrame = frame;
-      }
+      this.paintFrame(frame);
       this.renderSelectionOverlay();
       return;
     }
@@ -2673,11 +2974,7 @@ class TypeScriptTui {
       ];
       const frameLines = [...header, ...questionUI, ...footer];
       const frame = frameLines.join("\n");
-      if (frame !== this.lastFrame) {
-        process.stdout.write("\x1b[H\x1b[2J");
-        process.stdout.write(frame);
-        this.lastFrame = frame;
-      }
+      this.paintFrame(frame);
       this.renderSelectionOverlay();
       return;
     }
@@ -2690,12 +2987,7 @@ class TypeScriptTui {
     const transcript = this.renderTranscript(width, transcriptHeight, header.length);
     const frameLines = [...header, ...transcript, ...slashCommandMenu, ...composer, ...footer];
     const frame = frameLines.join("\n");
-
-    if (frame !== this.lastFrame) {
-      process.stdout.write("\x1b[H\x1b[2J");
-      process.stdout.write(frame);
-      this.lastFrame = frame;
-    }
+    this.paintFrame(frame);
 
     this.renderSelectionOverlay();
     this.positionCursor(width, header.length + transcript.length + slashCommandMenu.length);
@@ -3143,7 +3435,432 @@ class TypeScriptTui {
 
   // ── End Markdown renderer ─────────────────────────────────────
 
+  private styleToolRow(content: string, width: number, selected: boolean): string {
+    // 将 content 内部的 \x1b[0m 替换为只清除前景色/加粗的序列，避免重置背景色
+    // \x1b[39m - 清除前景色，\x1b[22m - 清除加粗（normal intensity）
+    const preservedBgContent = content.replace(/\x1b\[0m/g, "\x1b[39m\x1b[22m");
+    if (!selected) {
+      return preservedBgContent;
+    }
+    return `${COLOR.selectedBg}${this.padRight(preservedBgContent, width)}${COLOR.reset}`;
+  }
+
+  private isToolSuccessful(tool: ToolCall): boolean {
+    const output = tool.output?.trim() || "";
+    return tool.status === "done" && !/^\s*错误[:：]/.test(output);
+  }
+
+  private getToolHistoryIndex(tool: ToolCall): number {
+    return this.history.indexOf(tool);
+  }
+
+  private getToolStringArg(tool: ToolCall, key: string): string {
+    const value = tool.args?.[key];
+    return typeof value === "string" ? value : "";
+  }
+
+  private getTodoItemsFromTool(tool: ToolCall): string[] {
+    const rawTodos = tool.args?.todos;
+    if (Array.isArray(rawTodos)) {
+      return rawTodos
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+
+    const output = tool.output?.trim() || "";
+    if (!output) {
+      return [];
+    }
+    return output
+      .split("\n")
+      .map((line) => line.match(/^\s*-\s+(.*)$/)?.[1]?.trim() || "")
+      .filter(Boolean);
+  }
+
+  private getPreviousPlanTodos(tool: ToolCall): string[] {
+    const currentIndex = this.getToolHistoryIndex(tool);
+    if (currentIndex <= 0) {
+      return [];
+    }
+    for (let index = currentIndex - 1; index >= 0; index -= 1) {
+      const entry = this.history[index];
+      if (entry?.kind === "tool" && entry.name === "todo_write" && this.isToolSuccessful(entry)) {
+        return this.getTodoItemsFromTool(entry);
+      }
+    }
+    return [];
+  }
+
+  private summarizePlanItems(items: string[], width: number): string {
+    if (items.length === 0) {
+      return "暂无待办事项。";
+    }
+    if (items.length === 1) {
+      return items[0] || "暂无待办事项。";
+    }
+    const joined = items.join("；");
+    if (this.visibleLength(joined) <= width) {
+      return joined;
+    }
+    return `共 ${items.length} 项待办`;
+  }
+
+  private renderPlanToolBlock(tool: ToolCall, width: number): string[] {
+    const selected = tool.id === this.selectedToolId;
+    const items = this.getTodoItemsFromTool(tool);
+    const previousItems = this.getPreviousPlanTodos(tool);
+    const completedItems = previousItems.filter((item) => !items.includes(item));
+    const headerColor = selected ? COLOR.selectedText : COLOR.accent;
+    const detailColor = selected ? COLOR.selectedSubtle : COLOR.secondary;
+    let title = "Plan";
+
+    if (tool.status === "running") {
+      title = previousItems.length > 0 ? "Updating Plan" : "Planning";
+    } else if (items.length === 0) {
+      title = previousItems.length > 0 ? "Cleared Plan" : "Plan";
+    } else if (previousItems.length > 0) {
+      title = "Updated Plan";
+    }
+
+    let summary = this.summarizePlanItems(items, Math.max(12, width - 8));
+    if (tool.status === "running" && items.length === 0) {
+      summary = "正在整理待办事项。";
+    } else if (tool.status === "done" && items.length === 0 && previousItems.length > 0) {
+      summary = "已清空待办事项。";
+    }
+
+    const rows: string[] = [];
+    rows.push(this.styleToolRow(`${headerColor}${COLOR.bold}• ${title}${COLOR.reset}`, width, selected));
+    rows.push(this.styleToolRow(`${detailColor}  └ ${summary}${COLOR.reset}`, width, selected));
+
+    const itemColor = selected ? COLOR.selectedText : COLOR.soft;
+    for (const item of items) {
+      const wrapped = this.wrap(item, Math.max(12, width - 8));
+      const segments = wrapped.length > 0 ? wrapped : [""];
+      segments.forEach((segment, index) => {
+        const prefix = index === 0 ? "    □ " : "      ";
+        rows.push(this.styleToolRow(`${itemColor}${prefix}${segment}${COLOR.reset}`, width, selected));
+      });
+    }
+
+    const completedColor = selected ? COLOR.selectedSubtle : COLOR.secondary;
+    for (const item of completedItems) {
+      const wrapped = this.wrap(item, Math.max(12, width - 8));
+      const segments = wrapped.length > 0 ? wrapped : [""];
+      segments.forEach((segment, index) => {
+        const prefix = index === 0 ? "    ■ " : "      ";
+        rows.push(this.styleToolRow(`${completedColor}${prefix}${segment}${COLOR.reset}`, width, selected));
+      });
+    }
+
+    return rows;
+  }
+
+  private parseReadSnapshot(output: string): ReadSnapshot | null {
+    const lines = output.split("\n");
+    const snapshotLines: string[] = [];
+    let startLine = 0;
+
+    for (const line of lines) {
+      const match = line.match(/^\s*(\d+)\t(.*)$/);
+      if (!match) {
+        if (snapshotLines.length > 0) {
+          break;
+        }
+        continue;
+      }
+      if (snapshotLines.length === 0) {
+        startLine = Number.parseInt(match[1] || "0", 10);
+      }
+      snapshotLines.push(match[2] || "");
+    }
+
+    if (snapshotLines.length === 0 || startLine <= 0) {
+      return null;
+    }
+    return { startLine, lines: snapshotLines };
+  }
+
+  private splitDiffLines(text: string): string[] {
+    const normalized = this.normalizeLineBreaks(text);
+    const trimmed = normalized.endsWith("\n") ? normalized.slice(0, -1) : normalized;
+    if (!trimmed) {
+      return [];
+    }
+    return trimmed.split("\n");
+  }
+
+  private findLineSequence(haystack: string[], needle: string[]): number {
+    if (needle.length === 0) {
+      return 0;
+    }
+    const maxStart = haystack.length - needle.length;
+    for (let index = 0; index <= maxStart; index += 1) {
+      let matched = true;
+      for (let offset = 0; offset < needle.length; offset += 1) {
+        if (haystack[index + offset] !== needle[offset]) {
+          matched = false;
+          break;
+        }
+      }
+      if (matched) {
+        return index;
+      }
+    }
+    return -1;
+  }
+
+  private findReadContextForEdit(tool: ToolCall): { matchStartLine: number } | null {
+    const currentIndex = this.getToolHistoryIndex(tool);
+    if (currentIndex <= 0) {
+      return null;
+    }
+
+    const filePath = this.getToolStringArg(tool, "file_path");
+    const oldLines = this.splitDiffLines(this.getToolStringArg(tool, "old_text"));
+    for (let index = currentIndex - 1; index >= 0; index -= 1) {
+      const entry = this.history[index];
+      if (
+        entry?.kind !== "tool"
+        || entry.name !== "read"
+        || !this.isToolSuccessful(entry)
+        || this.getToolStringArg(entry, "file_path") !== filePath
+      ) {
+        continue;
+      }
+
+      const snapshot = this.parseReadSnapshot(entry.output || "");
+      if (!snapshot) {
+        continue;
+      }
+      const matchedOffset = this.findLineSequence(snapshot.lines, oldLines);
+      if (matchedOffset >= 0) {
+        return { matchStartLine: snapshot.startLine + matchedOffset };
+      }
+    }
+
+    return null;
+  }
+
+  private computeLineDiff(oldLines: string[], newLines: string[]): LineDiffOp[] {
+    const rows = oldLines.length + 1;
+    const cols = newLines.length + 1;
+    const dp: number[][] = Array.from({ length: rows }, () => Array<number>(cols).fill(0));
+
+    for (let oldIndex = oldLines.length - 1; oldIndex >= 0; oldIndex -= 1) {
+      for (let newIndex = newLines.length - 1; newIndex >= 0; newIndex -= 1) {
+        if (oldLines[oldIndex] === newLines[newIndex]) {
+          dp[oldIndex][newIndex] = (dp[oldIndex + 1]?.[newIndex + 1] || 0) + 1;
+        } else {
+          dp[oldIndex][newIndex] = Math.max(
+            dp[oldIndex + 1]?.[newIndex] || 0,
+            dp[oldIndex]?.[newIndex + 1] || 0,
+          );
+        }
+      }
+    }
+
+    const diff: LineDiffOp[] = [];
+    let oldIndex = 0;
+    let newIndex = 0;
+    while (oldIndex < oldLines.length && newIndex < newLines.length) {
+      if (oldLines[oldIndex] === newLines[newIndex]) {
+        diff.push({ type: "equal", text: oldLines[oldIndex] || "" });
+        oldIndex += 1;
+        newIndex += 1;
+        continue;
+      }
+
+      if ((dp[oldIndex + 1]?.[newIndex] || 0) >= (dp[oldIndex]?.[newIndex + 1] || 0)) {
+        diff.push({ type: "remove", text: oldLines[oldIndex] || "" });
+        oldIndex += 1;
+      } else {
+        diff.push({ type: "add", text: newLines[newIndex] || "" });
+        newIndex += 1;
+      }
+    }
+
+    while (oldIndex < oldLines.length) {
+      diff.push({ type: "remove", text: oldLines[oldIndex] || "" });
+      oldIndex += 1;
+    }
+
+    while (newIndex < newLines.length) {
+      diff.push({ type: "add", text: newLines[newIndex] || "" });
+      newIndex += 1;
+    }
+
+    return diff;
+  }
+
+  private countLineDiffChanges(diff: LineDiffOp[]): { additions: number; deletions: number } {
+    let additions = 0;
+    let deletions = 0;
+    for (const row of diff) {
+      if (row.type === "add") {
+        additions += 1;
+      } else if (row.type === "remove") {
+        deletions += 1;
+      }
+    }
+    return { additions, deletions };
+  }
+
+  private buildDiffExcerptRows(diff: LineDiffOp[], startLine?: number): DiffExcerptRow[] {
+    const numberedRows: DiffExcerptRow[] = [];
+    let oldLine = startLine ?? 1;
+    let newLine = startLine ?? 1;
+    const hasLineNumbers = startLine !== undefined;
+
+    for (const row of diff) {
+      if (row.type === "equal") {
+        numberedRows.push({ kind: "context", lineNumber: hasLineNumbers ? newLine : undefined, text: row.text });
+        oldLine += 1;
+        newLine += 1;
+      } else if (row.type === "remove") {
+        numberedRows.push({ kind: "remove", lineNumber: hasLineNumbers ? oldLine : undefined, text: row.text });
+        oldLine += 1;
+      } else {
+        numberedRows.push({ kind: "add", lineNumber: hasLineNumbers ? newLine : undefined, text: row.text });
+        newLine += 1;
+      }
+    }
+
+    const changedIndices = numberedRows
+      .map((row, index) => ({ row, index }))
+      .filter(({ row }) => row.kind !== "context")
+      .map(({ index }) => index);
+
+    if (changedIndices.length === 0) {
+      return numberedRows.slice(0, Math.min(numberedRows.length, 3));
+    }
+
+    const windows = changedIndices.map((index) => ({
+      start: Math.max(0, index - 1),
+      end: Math.min(numberedRows.length - 1, index + 1),
+    }));
+
+    const merged: Array<{ start: number; end: number }> = [];
+    for (const window of windows) {
+      const previous = merged[merged.length - 1];
+      if (!previous || window.start > previous.end + 1) {
+        merged.push(window);
+      } else {
+        previous.end = Math.max(previous.end, window.end);
+      }
+    }
+
+    const visible: DiffExcerptRow[] = [];
+    merged.forEach((window, index) => {
+      if (index > 0) {
+        visible.push({ kind: "ellipsis" });
+      }
+      visible.push(...numberedRows.slice(window.start, window.end + 1));
+    });
+    return visible;
+  }
+
+  private renderDiffExcerptRows(rows: DiffExcerptRow[], width: number, selected: boolean): string[] {
+    const rendered: string[] = [];
+    const lineNumberWidth = Math.max(
+      4,
+      ...rows.map((row) => String(row.lineNumber || "").length || 0),
+    );
+    const contentWidth = Math.max(12, width - lineNumberWidth - 8);
+    const lineNumberColor = selected ? COLOR.selectedSubtle : COLOR.secondary;
+
+    for (const row of rows) {
+      if (row.kind === "ellipsis") {
+        rendered.push(this.styleToolRow(`${lineNumberColor}${" ".repeat(lineNumberWidth)}   ⋮${COLOR.reset}`, width, selected));
+        continue;
+      }
+
+      const text = row.text ?? "";
+      const wrapped = this.wrap(text, contentWidth);
+      const segments = wrapped.length > 0 ? wrapped : [""];
+
+      segments.forEach((segment, index) => {
+        const lineNumber = index === 0 && row.lineNumber !== undefined
+          ? String(row.lineNumber).padStart(lineNumberWidth)
+          : " ".repeat(lineNumberWidth);
+
+        if (row.kind === "context") {
+          const contextColor = selected ? COLOR.selectedSubtle : COLOR.soft;
+          if (!segment) {
+            rendered.push(this.styleToolRow(`${lineNumberColor}${lineNumber}${COLOR.reset}`, width, selected));
+          } else {
+            rendered.push(this.styleToolRow(
+              `${lineNumberColor}${lineNumber}${COLOR.reset}   ${contextColor}${segment}${COLOR.reset}`,
+              width,
+              selected,
+            ));
+          }
+          return;
+        }
+
+        const marker = row.kind === "add" ? "+" : "-";
+        const markerColor = selected
+          ? COLOR.selectedText
+          : row.kind === "add"
+            ? COLOR.user
+            : COLOR.danger;
+        const prefix = index === 0 ? marker : " ";
+        rendered.push(this.styleToolRow(
+          `${lineNumberColor}${lineNumber}${COLOR.reset} ${markerColor}${prefix} ${segment}${COLOR.reset}`,
+          width,
+          selected,
+        ));
+      });
+    }
+
+    return rendered;
+  }
+
+  private renderEditToolBlock(tool: ToolCall, width: number): string[] {
+    const selected = tool.id === this.selectedToolId;
+    const filePath = this.getToolStringArg(tool, "file_path") || "(unknown file)";
+    const oldLines = this.splitDiffLines(this.getToolStringArg(tool, "old_text"));
+    const newLines = this.splitDiffLines(this.getToolStringArg(tool, "new_text"));
+    const headerColor = selected ? COLOR.selectedText : COLOR.tool;
+    const rows: string[] = [];
+
+    if (tool.status === "running") {
+      rows.push(this.styleToolRow(`${headerColor}${COLOR.bold}Editing ${filePath}${COLOR.reset}`, width, selected));
+      return rows;
+    }
+
+    if (!this.isToolSuccessful(tool)) {
+      rows.push(this.styleToolRow(`${headerColor}${COLOR.bold}Edit ${filePath}${COLOR.reset}`, width, selected));
+      const errorText = tool.output?.trim() || "(无输出)";
+      for (const line of this.wrap(errorText, Math.max(12, width - 6))) {
+        rows.push(this.styleToolRow(`${COLOR.danger}  ${line}${COLOR.reset}`, width, selected));
+      }
+      return rows;
+    }
+
+    const diff = this.computeLineDiff(oldLines, newLines);
+    const counts = this.countLineDiffChanges(diff);
+    rows.push(this.styleToolRow(
+      `${headerColor}${COLOR.bold}Edited ${filePath} (+${counts.additions} -${counts.deletions})${COLOR.reset}`,
+      width,
+      selected,
+    ));
+
+    const readContext = this.findReadContextForEdit(tool);
+    const excerptRows = this.buildDiffExcerptRows(diff, readContext?.matchStartLine);
+    rows.push(...this.renderDiffExcerptRows(excerptRows, width, selected));
+    return rows;
+  }
+
   private renderToolBlock(tool: ToolCall, width: number): string[] {
+    if (tool.name === "todo_write") {
+      return this.renderPlanToolBlock(tool, width);
+    }
+    if (tool.name === "edit") {
+      return this.renderEditToolBlock(tool, width);
+    }
+
     const lines: string[] = [];
     const selected = tool.id === this.selectedToolId;
     // 工具调用使用橙色
@@ -3153,7 +3870,7 @@ class TypeScriptTui {
 
     for (const line of this.wrapAnsiAware(summary, bodyWidth)) {
       const composed = `${prefix}${selected ? `${COLOR.selectedText}${line}${COLOR.reset}` : `${COLOR.tool}${line}${COLOR.reset}`}`;
-      lines.push(selected ? `${COLOR.selectedBg}${this.padRight(composed, width)}${COLOR.reset}` : composed);
+      lines.push(this.styleToolRow(composed, width, selected));
     }
 
     if (tool.expanded) {
@@ -3295,7 +4012,7 @@ class TypeScriptTui {
       const frameIndex = Math.floor(elapsedMs / 80) % this.generatingSpinnerFrames.length;
       const frame = this.generatingSpinnerFrames[frameIndex] ?? this.generatingSpinnerFrames[0];
       const elapsedSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
-      lines.push(`${COLOR.warning}${COLOR.bold}${frame}${COLOR.reset} ${COLOR.secondary}${elapsedSeconds}s${COLOR.reset}`);
+      lines.push(`${COLOR.warning}${COLOR.bold}${frame}${COLOR.reset} ${COLOR.secondary}${formatDuration(elapsedSeconds)}${COLOR.reset}`);
     }
 
     lines.push(separator);
@@ -3418,7 +4135,12 @@ class TypeScriptTui {
   }
 
   private stripAnsi(text: string): string {
-    return text.replace(/\x1b\[[0-9;]*m/g, "");
+    // 匹配完整 ANSI 序列
+    let result = text.replace(/\x1b\[[0-9;]*[mK]/g, "");
+    // 匹配流式分片残留：必须有分号（如 "186;198;207m"）
+    // 避免误删正常文本如 "2.0m"
+    result = result.replace(/[0-9]+;[0-9;]*m/g, "");
+    return result;
   }
 
   private truncateAnsiAware(text: string, width: number): string {
@@ -3498,7 +4220,7 @@ class TypeScriptTui {
 
   private enterAltScreen(): void {
     // 启用 alt screen、隐藏光标、扩展键盘协议、鼠标跟踪（滚轮+选区）
-    process.stdout.write(`\x1b[?1049h\x1b[?25h${ENABLE_KITTY_KEYBOARD}${ENABLE_MODIFY_OTHER_KEYS}`);
+    process.stdout.write(`\x1b[?1049h\x1b[?25h${ENABLE_KITTY_KEYBOARD}${ENABLE_MODIFY_OTHER_KEYS}${ENABLE_BRACKETED_PASTE}`);
     this.setMouseTracking(true);
   }
 
@@ -3561,8 +4283,10 @@ class TypeScriptTui {
       clearTimeout(this.nativeSelectionTimer);
       this.nativeSelectionTimer = null;
     }
+    this.bracketedPasteMode = false;
+    this.bracketedPasteBuffer = "";
     this.setMouseTracking(false);
-    process.stdout.write(`${DISABLE_MODIFY_OTHER_KEYS}${DISABLE_KITTY_KEYBOARD}\x1b[?25h\x1b[?1049l`);
+    process.stdout.write(`${DISABLE_BRACKETED_PASTE}${DISABLE_MODIFY_OTHER_KEYS}${DISABLE_KITTY_KEYBOARD}\x1b[?25h\x1b[?1049l`);
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(false);
     }

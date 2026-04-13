@@ -8,6 +8,8 @@ const CTRL_O_SEQUENCES = new Set(["\x0f", "\x1b[111;5u", "\x1b[27;5;111~"]);
 const CTRL_C_SEQUENCES = new Set(["\x03", "\x1b[99;5u", "\x1b[99;6u", "\x1b[27;5;99~", "\x1b[27;6;99~"]);
 const ESCAPE_SEQUENCES = new Set(["\x1b", "\x1b[27u", "\x1b[27;1u", "\x1b[27~"]);
 const SHIFT_ENTER_SEQUENCES = new Set(["\x1b[13;2u", "\x1b[13;2~", "\x1b[27;2;13~", "\x1b[27;13;2~"]);
+const BRACKETED_PASTE_START_SEQUENCES = new Set(["\x1b[200~"]);
+const BRACKETED_PASTE_END_SEQUENCES = new Set(["\x1b[201~"]);
 const KEYPRESS_PASSTHROUGH_SEQUENCES = new Set([
   "\x1b[A",
   "\x1b[B",
@@ -37,6 +39,8 @@ const EXACT_CONTROL_SEQUENCES = [
   ...CTRL_C_SEQUENCES,
   ...ESCAPE_SEQUENCES,
   ...SHIFT_ENTER_SEQUENCES,
+  ...BRACKETED_PASTE_START_SEQUENCES,
+  ...BRACKETED_PASTE_END_SEQUENCES,
   ...KEYPRESS_PASSTHROUGH_SEQUENCES,
   ...INPUT_METHOD_SWITCH_SEQUENCES,
 ].sort((left, right) => right.length - left.length);
@@ -67,6 +71,14 @@ export function isEscapeSequence(chunk: string): boolean {
 
 export function isShiftEnterSequence(chunk: string): boolean {
   return SHIFT_ENTER_SEQUENCES.has(chunk);
+}
+
+export function isBracketedPasteStartSequence(chunk: string): boolean {
+  return BRACKETED_PASTE_START_SEQUENCES.has(chunk);
+}
+
+export function isBracketedPasteEndSequence(chunk: string): boolean {
+  return BRACKETED_PASTE_END_SEQUENCES.has(chunk);
 }
 
 export function isKeypressPassthroughSequence(chunk: string): boolean {

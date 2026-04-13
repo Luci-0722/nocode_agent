@@ -77,3 +77,22 @@ def init_skill_registry(cwd) -> SkillRegistry:
     _registry.register_many(entries)
     logger.info("Skill registry initialized: %d skills discovered", len(entries))
     return _registry
+
+
+def refresh_skill_registry(cwd) -> SkillRegistry:
+    """重新扫描 skills 并更新 registry（用于动态刷新）。"""
+    from .discover import SkillDiscover
+    from pathlib import Path
+
+    global _registry
+    if _registry is None:
+        return init_skill_registry(cwd)
+
+    discover = SkillDiscover(Path(cwd))
+    entries = discover.discover_all()
+    _registry._skills.clear()
+    _registry._sent_skill_names.clear()
+    for entry in entries:
+        _registry._skills[entry.name] = entry
+    logger.info("Skill registry refreshed: %d skills discovered", len(entries))
+    return _registry
