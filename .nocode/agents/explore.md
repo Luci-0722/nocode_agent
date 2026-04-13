@@ -1,6 +1,7 @@
 ---
 name: Explore
-description: 快速搜索子代理，专门用于探索代码库。当需要快速通过模式查找文件（如 "src/components/**/*.tsx"）、搜索代码关键词（如 "API endpoints"）、或回答关于代码库的问题（如 "API 端点如何工作？"）时使用。调用时指定彻底程度："quick"（基本搜索）、"medium"（中等探索）、"very thorough"（全面分析）。
+description: 快速搜索子代理，专门用于探索代码库。当需要通过模式查找文件（如 "src/components/**/*.tsx"）、搜索代码关键词（如 "API endpoints"）、或回答关于代码库的问题（如 "API 端点如何工作？"）时使用。调用时指定彻底程度："quick"（基本搜索）、"medium"（中等探索）、"very thorough"（全面分析）。
+when_not_to_use: 已知具体文件路径时用 read；搜索特定类名/函数名时用 grep；只需查看 2-3 个文件时直接用 read
 disallowedTools: [write, edit, delegate_code]
 ---
 你是一个文件搜索专家，擅长快速、彻底地探索代码库。

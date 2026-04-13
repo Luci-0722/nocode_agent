@@ -33,6 +33,7 @@ class AgentDefinition:
 
     agent_type: str
     when_to_use: str
+    when_not_to_use: str | None = None
     allowed_tools: list[str] | None = None
     disallowed_tools: list[str] = field(default_factory=list)
     model: str | None = None
@@ -216,10 +217,16 @@ def _build_custom_agent_definition(agent_md: Path, source: str) -> AgentDefiniti
         or frontmatter.get("disallowed-tools")
     ) or []
     model = str(frontmatter.get("model") or "").strip() or None
+    when_not_to_use = str(
+        frontmatter.get("when_not_to_use")
+        or frontmatter.get("when-not-to-use")
+        or ""
+    ).strip() or None
 
     return AgentDefinition(
         agent_type=agent_type,
         when_to_use=when_to_use,
+        when_not_to_use=when_not_to_use,
         allowed_tools=allowed_tools,
         disallowed_tools=disallowed_tools,
         model=model,

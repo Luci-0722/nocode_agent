@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from nocode_agent.agent.subagents import describe_agent_tools, get_all_agent_definitions
+from nocode_agent.agent.subagents import get_all_agent_definitions
 from nocode_agent.prompt.context import (
     build_environment_section,
     discover_instruction_files,
@@ -17,22 +17,46 @@ _STATIC_PROMPT_CACHE: str | None = None
 
 
 def build_agent_listing_section() -> str:
-    """构建可用子代理列表。"""
+    """构建子代理委派指南。"""
     agent_definitions = get_all_agent_definitions()
     if not agent_definitions:
         return ""
 
-    lines = [
-        "# Available subagents",
-        "以下子代理可通过 delegate_code 调用；包含内置与已发现的自定义定义。",
-    ]
-    for agent_definition in agent_definitions:
-        default_marker = "（默认）" if agent_definition.agent_type == "general-purpose" else ""
-        lines.append(
-            f"- {agent_definition.agent_type}{default_marker}: "
-            f"{agent_definition.when_to_use} "
-            f"(工具: {describe_agent_tools(agent_definition)})"
-        )
+    lines = ["# Subagent 委派指南", ""]
+
+    # 何时委派
+    use_lines = []
+    for agent in agent_definitions:
+        if agent.when_to_use:
+            use_lines.append(f"- {agent.when_to_use} → 使用 {agent.agent_type}")
+    if use_lines:
+        lines.append("## 何时委派")
+        lines.extend(use_lines)
+        lines.append("")
+
+    # 何时不委派
+    not_use_lines = []
+    for agent in agent_definitions:
+        if agent.when_not_to_use:
+            not_use_lines.append(f"- {agent.when_not_to_use}")
+    if not_use_lines:
+        lines.append("## 何时不委派")
+        # 去重
+        seen = set()
+        unique_lines = []
+        for line in not_use_lines:
+            if line not in seen:
+                seen.add(line)
+                unique_lines.append(line)
+        lines.extend(unique_lines)
+        lines.append("")
+
+    # 委派注意事项
+    lines.append("## 委派注意事项")
+    lines.append("- 委派时给出完整上下文：说明目标、已尝试的方法、关键文件路径")
+    lines.append("- 不要写\"基于你的发现，修复问题\"这种把理解推给子代理的 prompt")
+    lines.append("- 不要重复子代理正在做的工作——委派后不要自己再做相同搜索")
+
     return "\n".join(lines)
 
 
