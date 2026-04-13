@@ -78,7 +78,8 @@ class MainAgent:
         return self._reasoning_effort
 
     async def clear(self):
-        await self._checkpointer.delete_thread(self._thread_id)
+        """生成新的 thread_id，开始新会话。旧会话保留以便后续恢复。"""
+        self._thread_id = self._new_thread_id()
 
     async def enqueue_user_input(self, text: str) -> None:
         await self._interactive_broker.enqueue_user_input(text)
