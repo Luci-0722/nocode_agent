@@ -84,6 +84,30 @@ You are the project reviewer.
             self.assertIn("Notes:", agent.get_system_prompt())
             self.assertIsNone(registry.get("general-purpose"))
 
+    def test_registry_requires_description_frontmatter_for_when_to_use(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            project_root = temp_root / "project"
+            subdir = project_root / "app"
+            project_agents = project_root / ".nocode" / "agents"
+
+            subdir.mkdir(parents=True)
+            project_agents.mkdir(parents=True)
+
+            (project_agents / "reviewer.md").write_text(
+                """---
+name: reviewer
+when_to_use: Review code
+---
+You are the project reviewer.
+""",
+                encoding="utf-8",
+            )
+
+            registry = init_agent_registry(subdir)
+
+            self.assertIsNone(registry.get("reviewer"))
+
     def test_resolve_agent_tools_honors_allow_and_deny_lists(self) -> None:
         all_tools = [
             SimpleNamespace(name="read"),

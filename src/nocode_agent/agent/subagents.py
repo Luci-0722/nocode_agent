@@ -188,12 +188,7 @@ def _build_custom_agent_definition(agent_md: Path, source: str) -> AgentDefiniti
 
     frontmatter, markdown = _parse_frontmatter(content)
     agent_type = str(frontmatter.get("name") or agent_md.stem).strip()
-    when_to_use = str(
-        frontmatter.get("description")
-        or frontmatter.get("when_to_use")
-        or frontmatter.get("when-to-use")
-        or ""
-    ).strip()
+    when_to_use = str(frontmatter.get("description") or "").strip()
     if not agent_type or not when_to_use:
         logger.warning(
             "Skipping agent definition %s: missing name/description frontmatter",

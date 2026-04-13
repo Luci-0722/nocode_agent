@@ -1,6 +1,6 @@
 # nocode_agent
 
-`nocode_agent` 是一个独立的 NoCode coding agent 运行时仓库，当前采用 Python backend + TypeScript TUI 的结构。
+`nocode_agent` 是一个独立的 NoCode coding agent 运行时仓库，基于 LangChain / LangGraph 构建，当前采用 Python backend + TypeScript TUI 的结构。
 
 它的目标很直接：在终端里提供一个可运行、可恢复、可扩展的 coding agent，支持多模型接入、subagent、skills、权限审批，以及长会话压缩。
 
@@ -15,6 +15,7 @@
 
 - TypeScript TUI，直接在终端中交互
 - Python stdio backend，前后端职责清晰
+- 基于 LangChain / LangGraph 构建 agent、tool 调用和运行时编排
 - 支持恢复历史会话
 - 支持项目级和用户级 subagent 发现
 - 支持 skills 发现、恢复与调用
@@ -48,6 +49,13 @@ frontend/
 .nocode/agents/   项目级 subagent 定义
 tests/            启动与交互相关冒烟测试
 ```
+
+## 技术栈
+
+- LangChain / LangGraph
+- Python backend
+- TypeScript TUI
+- SQLite checkpoint persistence
 
 ## 环境要求
 
@@ -148,7 +156,8 @@ export NOCODE_LOG_FILE=/your/path/nocode.log
 ```md
 ---
 name: reviewer
-description: 用于独立审查迁移、接口变更和高风险代码
+description: 用于独立审查迁移、接口变更和高风险代码，适合在主实现完成后做一次独立验证
+when_not_to_use: 简单改动或 1-2 个文件的小修复不需要单独委派审查
 tools: [read, grep]
 model: glm-5.1
 ---
@@ -160,7 +169,8 @@ model: glm-5.1
 字段说明：
 
 - `name`：`delegate_code` 使用的 subagent 类型名
-- `description`：主 agent 选择该 subagent 时看到的用途说明
+- `description`：必填，用途说明，主 agent 选择 subagent 时会读取这里
+- `when_not_to_use`：可选，描述什么情况下不应该使用这个 subagent
 - `tools`：可选，限制允许的工具
 - `disallowedTools`：可选，显式禁用的工具
 - `model`：可选，覆盖默认 `subagent_model`
