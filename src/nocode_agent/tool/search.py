@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import os
+import platform
 import re
 import shutil
 from pathlib import Path
@@ -38,19 +39,36 @@ class GrepInput(BaseModel):
 _rg_path: str | None = None
 
 
+def _normalize_rg_platform_key() -> str:
+    """Build the bundled rg platform suffix used under ``bin/``."""
+    machine = platform.machine().lower()
+    if machine in ("x86_64", "amd64"):
+        arch = "x86_64"
+    elif machine in ("arm64", "aarch64"):
+        arch = "arm64"
+    else:
+        arch = machine
+
+    system = platform.system().lower()
+    if system.startswith(("msys", "mingw", "cygwin")):
+        system = "windows"
+
+    return f"{system}-{arch}"
+
+
 def _find_rg_binary() -> str | None:
     """查找可用的 rg 二进制。优先级：项目内置 > 系统 PATH。"""
-    arch = os.uname().machine.lower()
-    if arch in ("x86_64", "amd64"):
-        arch = "x86_64"
-    elif arch in ("arm64", "aarch64"):
-        arch = "arm64"
-    platform_key = f"{os.uname().sysname.lower()}-{arch}"
+    platform_key = _normalize_rg_platform_key()
 
     project_root = repo_root()
-    bundled = project_root / "bin" / f"rg-{platform_key}"
-    if bundled.exists() and os.access(str(bundled), os.X_OK):
-        return str(bundled)
+    bundled_names = [f"rg-{platform_key}"]
+    if platform.system().lower() == "windows":
+        bundled_names.insert(0, f"rg-{platform_key}.exe")
+
+    for name in bundled_names:
+        bundled = project_root / "bin" / name
+        if bundled.exists() and os.access(str(bundled), os.X_OK):
+            return str(bundled)
 
     system_rg = shutil.which("rg")
     if system_rg:
@@ -83,7 +101,13 @@ def _grep_with_rg(
 
     cmd = [rg, "--no-config", "--no-ignore-vcs"]
     workspace = _workspace_root()
-    cwd = str(base)
+    try:
+        search_root = base.relative_to(workspace)
+        rg_cwd = workspace
+        cwd = "." if str(search_root) == "." else str(search_root)
+    except ValueError:
+        rg_cwd = base.parent if base.is_file() else base
+        cwd = str(base)
 
     if output_mode == "files_with_matches":
         cmd += ["--files-with-matches", "--max-count", str(max_matches)]
@@ -101,7 +125,7 @@ def _grep_with_rg(
     cmd.append(cwd)
 
     try:
-        proc = asyncio.run(_run_rg(cmd))
+        proc = asyncio.run(_run_rg(cmd, rg_cwd))
     except Exception:
         return None
 
@@ -118,52 +142,15 @@ def _grep_with_rg(
     if not text:
         return "未找到匹配内容。"
 
-    if output_mode == "content":
-        lines = text.splitlines()
-        converted = []
-        for line in lines:
-            for prefix_sep in [":", "-"]:
-                idx = line.find(prefix_sep)
-                if idx > 0:
-                    abs_path = line[:idx]
-                    try:
-                        rel = str(Path(abs_path).relative_to(workspace))
-                    except ValueError:
-                        rel = abs_path
-                    converted.append(rel + line[idx:])
-                    break
-            else:
-                converted.append(line)
-        text = "\n".join(converted)
-    elif output_mode in ("files_with_matches", "count"):
-        lines = text.splitlines()
-        converted = []
-        for line in lines:
-            for sep in [":", "\n"]:
-                idx = line.find(sep)
-                if idx > 0:
-                    abs_path = line[:idx]
-                    try:
-                        rel = str(Path(abs_path).relative_to(workspace))
-                    except ValueError:
-                        rel = abs_path
-                    converted.append(rel + line[idx:])
-                    break
-            else:
-                try:
-                    converted.append(str(Path(line).relative_to(workspace)))
-                except ValueError:
-                    converted.append(line)
-        text = "\n".join(converted)
-
     return _trim_output(text)
 
 
-async def _run_rg(cmd: list[str]) -> tuple[bytes, bytes, int] | None:
+async def _run_rg(cmd: list[str], cwd: Path) -> tuple[bytes, bytes, int] | None:
     """异步运行 rg 命令。"""
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
+            cwd=str(cwd),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
