@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -49,6 +50,14 @@ logger = logging.getLogger(__name__)
 
 _MAX_OUTPUT = 12_000
 
+# 匹配所有 ANSI 转义序列（包括真彩色、256色、粗体等）
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[mK]")
+
+
+def _strip_ansi(text: str) -> str:
+    """剥离所有 ANSI 转义序列。"""
+    return _ANSI_ESCAPE_RE.sub("", text)
+
 
 def _workspace_root() -> Path:
     return Path.cwd().resolve()
@@ -66,6 +75,7 @@ def _resolve_path(file_path: str) -> Path:
 
 
 def _trim_output(text: str) -> str:
+    text = _strip_ansi(text)
     if len(text) <= _MAX_OUTPUT:
         return text
     return text[:_MAX_OUTPUT] + f"\n... (已截断，共 {len(text)} 字符)"
@@ -132,6 +142,7 @@ __all__ = [
     "WebSearchInput",
     "_http_get",
     "_resolve_path",
+    "_strip_ansi",
     "_strip_html",
     "_trim_output",
     "_workspace_root",

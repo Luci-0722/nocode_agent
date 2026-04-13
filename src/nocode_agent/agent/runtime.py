@@ -14,6 +14,7 @@ from langgraph.types import Command
 from nocode_agent.persistence import CheckpointerManager
 from nocode_agent.runtime.hitl import extract_hitl_request
 from nocode_agent.runtime.interaction import InteractiveSessionBroker
+from nocode_agent.tool.kit import _strip_ansi
 from .subagents import decode_runtime_subagent_type
 
 logger = logging.getLogger(__name__)
@@ -50,11 +51,11 @@ def _is_retryable_error(exc: Exception) -> bool:
 
 
 def _render_tool_output(content: Any) -> str:
-    """把工具输出压缩成稳定的前端展示文本。"""
+    """把工具输出压缩成稳定的前端展示文本，并剥离 ANSI 转义序列。"""
     if content is None:
         return ""
     if isinstance(content, str):
-        return content[:4000] + ("..." if len(content) > 4000 else "")
+        return _strip_ansi(content[:4000] + ("..." if len(content) > 4000 else ""))
     if isinstance(content, list):
         parts: list[str] = []
         for item in content:
@@ -70,9 +71,9 @@ def _render_tool_output(content: Any) -> str:
                 continue
             parts.append(str(item))
         rendered = "\n".join(part for part in parts if part).strip()
-        return rendered[:4000] + ("..." if len(rendered) > 4000 else "")
+        return _strip_ansi(rendered[:4000] + ("..." if len(rendered) > 4000 else ""))
     rendered = str(content)
-    return rendered[:4000] + ("..." if len(rendered) > 4000 else "")
+    return _strip_ansi(rendered[:4000] + ("..." if len(rendered) > 4000 else ""))
 
 
 def _normalize_subagent_type(agent_name: str) -> str:
@@ -289,12 +290,17 @@ class MainAgentRuntime:
         agent: Any,
         checkpointer: CheckpointerManager,
         interactive_broker: InteractiveSessionBroker,
-        thread_id: str,
+        main_agent: Any,
     ) -> None:
         self._agent = agent
         self._checkpointer = checkpointer
         self._interactive_broker = interactive_broker
-        self._thread_id = thread_id
+        self._main_agent = main_agent
+
+    @property
+    def _thread_id(self) -> str:
+        """动态获取 thread_id，支持运行时恢复。"""
+        return self._main_agent.thread_id
 
     def _start_stream(
         self,
@@ -402,7 +408,7 @@ class MainAgentRuntime:
                                     self._thread_id[:20],
                                     attempt + 1,
                                 )
-                            yield ("text", token.text)
+                            yield ("text", _strip_ansi(token.text))
                         continue
 
                     if chunk_type == "custom":

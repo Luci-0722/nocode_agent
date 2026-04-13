@@ -162,6 +162,11 @@ PYTHONPATH=src python3 -m nocode_agent.app.backend_stdio
 
 当前已知高频注意点：
 
+- [ANSI 序列分片] 错误现象：TUI 显示类似 "186;198;207m" 的残留文本，这是 ANSI 真彩色序列的 RGB 部分被原样输出。
+  原因：模型输出中的 ANSI 序列在流式传输时被分片，`\x1b[38;2;186;198;207m` 可能拆成多个 chunk，TUI 的 `stripAnsi` 只能匹配完整序列。
+  正确做法：在工具层统一剥离 ANSI 序列（`src/nocode_agent/tool/kit.py` 的 `_strip_ansi`），`_trim_output` 会自动调用；runtime 层的模型输出也会调用。TUI 端作为防御层再处理分片残留（必须含分号才匹配，避免误删 "2.0m" 等正常文本）。
+  最小验证：正则 `\x1b\[[0-9;]*[mK]`，TUI 防御用 `[0-9]+;[0-9;]*m`。
+
 - [TUI 输入框] 错误现象：改完 composer、wrap、spinner 或 prompt 前缀后，光标显示到了输入框外，或者落在错误行。
   正确做法：任何影响输入区可视高度、前缀宽度、换行结果的改动，都同步检查 `positionCursor()`、`renderComposer()`、`wrap()` 的一致性。
   最小验证：检查空输入、长文本换行、多行输入、中文宽字符、生成中状态下，光标始终落在输入正文区域。
