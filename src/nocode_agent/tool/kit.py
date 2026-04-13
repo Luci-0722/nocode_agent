@@ -59,6 +59,21 @@ def _strip_ansi(text: str) -> str:
     return _ANSI_ESCAPE_RE.sub("", text)
 
 
+def _sanitize_text(text: str) -> str:
+    """Replace lone surrogates (U+D800–U+DFFF) with U+FFFD.
+
+    Prevents ``UnicodeEncodeError: surrogates not allowed`` when
+    encoding strings to UTF-8 (e.g. in the OpenAI/Anthropic client).
+    The fast path (no surrogates) is nearly free because ``str.encode``
+    is implemented in C.
+    """
+    try:
+        text.encode("utf-8")
+        return text
+    except UnicodeEncodeError:
+        return text.encode("utf-8", errors="replace").decode("utf-8")
+
+
 def _workspace_root() -> Path:
     return Path.cwd().resolve()
 

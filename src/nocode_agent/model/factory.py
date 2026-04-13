@@ -12,6 +12,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 
 from nocode_agent.config import normalize_model_base_url, resolve_model_provider
+from nocode_agent.tool.kit import _sanitize_text
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +91,7 @@ def build_model(
                 proxy,
                 ",".join(no_proxy),
             )
-        return ChatAnthropic(**kwargs)
+        return _make_sanitized_model(ChatAnthropic(**kwargs))
 
     kwargs = {
         "model": model,
@@ -115,7 +116,7 @@ def build_model(
             mounts=mounts,
             timeout=request_timeout,
         )
-    return ChatOpenAI(**kwargs)
+    return _make_sanitized_model(ChatOpenAI(**kwargs))
 
 
 def build_no_proxy_mounts(no_proxy: list[str] | None) -> dict[str, None] | None:
@@ -157,3 +158,70 @@ def build_no_proxy_mounts(no_proxy: list[str] | None) -> dict[str, None] | None:
             continue
         mounts[f"all://*{item}"] = None
     return mounts or None
+
+
+# ── Surrogate sanitization wrapper ────────────────────────────────
+# The TUI may split emoji surrogate pairs (e.g. when cursor moves
+# through non-BMP chars), producing lone surrogates like \uDCA6.
+# These end up in the LangGraph checkpoint and crash the OpenAI /
+# Anthropic client when it tries to serialize the request to UTF-8.
+# Patching the model ensures every API call gets clean messages
+# without requiring a checkpoint migration.
+
+
+def _sanitize_messages(messages: list) -> list:
+    """Sanitize all string content in a list of LangChain messages."""
+    result: list = []
+    any_changed = False
+    for msg in messages:
+        content = getattr(msg, "content", None)
+        if isinstance(content, str):
+            new_content = _sanitize_text(content)
+            if new_content != content:
+                any_changed = True
+                try:
+                    msg = msg.model_copy(update={"content": new_content})
+                except AttributeError:
+                    msg = msg.copy(update={"content": new_content})
+        elif isinstance(content, list):
+            new_items: list = []
+            items_changed = False
+            for item in content:
+                if isinstance(item, dict) and isinstance(item.get("text"), str):
+                    new_text = _sanitize_text(item["text"])
+                    if new_text != item["text"]:
+                        items_changed = True
+                        any_changed = True
+                        item = {**item, "text": new_text}
+                new_items.append(item)
+            if items_changed:
+                try:
+                    msg = msg.model_copy(update={"content": new_items})
+                except AttributeError:
+                    msg = msg.copy(update={"content": new_items})
+        result.append(msg)
+    if any_changed:
+        logger.warning("Sanitized lone surrogates in %d message(s)", len(messages))
+    return result
+
+
+def _make_sanitized_model(model: BaseChatModel) -> BaseChatModel:
+    """Patch a model to sanitize messages before API calls."""
+    original_astream = model._astream
+
+    async def _sanitized_astream(messages, stop=None, run_manager=None, **kwargs):
+        messages = _sanitize_messages(messages)
+        async for chunk in original_astream(messages, stop=stop, run_manager=run_manager, **kwargs):
+            yield chunk
+
+    model._astream = _sanitized_astream
+
+    original_agenerate = getattr(model, "_agenerate", None)
+    if original_agenerate is not None:
+        async def _sanitized_agenerate(messages, stop=None, run_manager=None, **kwargs):
+            messages = _sanitize_messages(messages)
+            return await original_agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+        model._agenerate = _sanitized_agenerate
+
+    return model

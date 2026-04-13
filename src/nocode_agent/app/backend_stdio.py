@@ -20,6 +20,7 @@ from nocode_agent.runtime.bootstrap import (
     create_agent_from_config,
     load_runtime_config,
 )
+from nocode_agent.tool.kit import _sanitize_text
 
 logger = logging.getLogger(__name__)
 
@@ -209,7 +210,7 @@ async def main() -> int:
         message_type = payload.get("type")
 
         if message_type == "prompt":
-            prompt = str(payload.get("text", "")).strip()
+            prompt = _sanitize_text(str(payload.get("text", "")).strip())
             if not prompt:
                 _emit({"type": "error", "message": "empty prompt"})
                 continue
@@ -222,7 +223,7 @@ async def main() -> int:
             continue
 
         if message_type == "question_answer":
-            answer = str(payload.get("text", "")).strip()
+            answer = _sanitize_text(str(payload.get("text", "")).strip())
             if not answer:
                 _emit({"type": "error", "message": "empty question answer"})
                 continue
