@@ -1,10 +1,12 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import readline from "node:readline";
 import { PassThrough } from "node:stream";
+import { fileURLToPath } from "node:url";
 import {
   RawInputParser,
   type RawInputToken,
@@ -142,7 +144,7 @@ type PermissionAction = {
 
 type PermissionMode = "ask" | "all";
 
-type SlashCommandAction = "help" | "clear" | "session" | "resume" | "permission" | "quit";
+type SlashCommandAction = "help" | "clear" | "session" | "resume" | "permission" | "models" | "quit";
 
 type SlashCommandDefinition = {
   action: SlashCommandAction;
@@ -156,6 +158,7 @@ type SlashCommandDefinition = {
 type StatusPayload = {
   thread_id: string;
   model: string;
+  model_name?: string;
   subagent_model: string;
   reasoning_effort: string;
   cwd: string;
@@ -243,7 +246,9 @@ type BackendEvent =
             tool_call_id?: string;
           }
       >;
-    };
+    }
+  | { type: "model_list"; models: { name: string; model: string; is_default: string }[]; current: string; default: string }
+  | { type: "model_switched"; model_name: string; model: string };
 
 const COLOR = {
   reset: "\x1b[0m",
@@ -280,6 +285,49 @@ const COLOR = {
   },
 };
 
+const SOURCE_ROOT = (() => {
+  const configured = (process.env.NOCODE_SOURCE_ROOT || "").trim();
+  if (configured) {
+    return path.resolve(process.cwd(), expandUserPath(configured));
+  }
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+})();
+
+function expandUserPath(rawPath: string): string {
+  if (rawPath === "~") {
+    return os.homedir();
+  }
+  if (rawPath.startsWith("~/")) {
+    return path.join(os.homedir(), rawPath.slice(2));
+  }
+  return rawPath;
+}
+
+function resolveRuntimeProjectDir(): string {
+  const configured = (process.env.NOCODE_PROJECT_DIR || "").trim();
+  if (!configured) {
+    return process.cwd();
+  }
+  return path.resolve(process.cwd(), expandUserPath(configured));
+}
+
+function resolveStateDir(projectDir: string): string {
+  const configured = (process.env.NOCODE_STATE_DIR || "").trim();
+  if (configured) {
+    return path.resolve(process.cwd(), expandUserPath(configured));
+  }
+
+  let resolvedProjectDir = path.resolve(projectDir);
+  try {
+    resolvedProjectDir = fs.realpathSync(projectDir);
+  } catch {
+    // 仅用于错误提示路径，真实路径不存在时退回 resolve 即可。
+  }
+
+  const projectId = createHash("sha256").update(resolvedProjectDir).digest("hex").slice(0, 8);
+  return path.join(os.homedir(), ".nocode", "projects", projectId);
+}
+
 // 选区颜色（半透明蓝底）
 const SELECTION_BG = "\x1b[48;2;40;70;110m";
 
@@ -311,6 +359,13 @@ const SLASH_COMMANDS: SlashCommandDefinition[] = [
     name: "continue",
     description: "恢复历史会话（/resume 别名）",
     argumentHint: "[thread-id|关键词]",
+    acceptsArgs: true,
+  },
+  {
+    action: "models",
+    name: "models",
+    description: "列出或切换模型配置",
+    argumentHint: "[model-name]",
     acceptsArgs: true,
   },
   {
@@ -359,6 +414,7 @@ class TypeScriptTui {
   private streaming = "";
   private threadId = "";
   private model = "-";
+  private modelName = "";  // 模型配置名称（对应 models 段的 key）
   private subagentModel = "-";
   private reasoningEffort = "";
   private cwd = process.cwd();
@@ -394,6 +450,12 @@ class TypeScriptTui {
   // ── Permission picker state ─────────────────────────────────
   private showPermissionPicker = false;
   private permissionPickerIndex = 0;
+
+  // ── Model picker state ─────────────────────────────────────
+  private showModelPicker = false;
+  private modelPickerIndex = 0;
+  private modelPickerScroll = 0;
+  private modelPickerModels: { name: string; model: string; is_default: string }[] = [];
 
   // ── Question mode state ───────────────────────────────────
   private questionMode = false;
@@ -470,8 +532,9 @@ class TypeScriptTui {
   }
 
   private spawnBackend(): void {
-    // 项目目录：优先使用环境变量，否则回退到当前目录
-    const projectDir = process.env.NOCODE_PROJECT_DIR || process.cwd();
+    // agent 的工作目录始终跟随用户当前终端目录；源码仓库仅用于查找 nocode 自身资源。
+    const projectDir = resolveRuntimeProjectDir();
+    const sourceRoot = SOURCE_ROOT;
     this.backendStderrTail = "";
     this.backendReportedFatal = false;
     this.backendLogPath = this.resolveBackendLogPath(projectDir);
@@ -494,14 +557,14 @@ class TypeScriptTui {
         stdio: ["pipe", "pipe", "pipe"],
       });
     } else {
-      // 回退到 Python 方式，使用项目目录查找 .venv
+      // 回退到 Python 方式时，解释器和源码包应锚定 nocode_agent 源码仓库。
       const localPython = process.platform === "win32"
-        ? path.join(projectDir, ".venv", "Scripts", "python.exe")
-        : path.join(projectDir, ".venv", "bin", "python");
+        ? path.join(sourceRoot, ".venv", "Scripts", "python.exe")
+        : path.join(sourceRoot, ".venv", "bin", "python");
       const python = fs.existsSync(localPython)
         ? localPython
         : (process.env.PYTHON_BIN || (process.platform === "win32" ? "python" : "python3"));
-      const sourcePackageDir = path.join(projectDir, "src", "nocode_agent");
+      const sourcePackageDir = path.join(sourceRoot, "src", "nocode_agent");
       const pythonPathEntries: string[] = [];
 
       // 源码态回退到 Python 模块启动时，需要显式注入 src。
@@ -574,16 +637,11 @@ class TypeScriptTui {
   private resolveBackendLogPath(projectDir: string): string {
     const configured = (process.env.NOCODE_LOG_FILE || "").trim();
     if (!configured) {
-      return path.join(projectDir, ".state", "nocode.log");
+      return path.join(resolveStateDir(projectDir), "nocode.log");
     }
 
-    if (configured === "~") {
-      return os.homedir();
-    }
-    if (configured.startsWith("~/")) {
-      return path.join(os.homedir(), configured.slice(2));
-    }
-    return path.isAbsolute(configured) ? configured : path.resolve(process.cwd(), configured);
+    const expanded = expandUserPath(configured);
+    return path.isAbsolute(expanded) ? expanded : path.resolve(process.cwd(), expanded);
   }
 
   private appendBackendStderr(chunk: string): void {
@@ -701,6 +759,35 @@ class TypeScriptTui {
       }
       if (key.name === "escape") {
         this.closePermissionPicker();
+        this.render();
+        return;
+      }
+      return; // swallow all other keys while picker is active
+    }
+
+    // ── Model picker mode ──────────────────────────────────
+    if (this.showModelPicker) {
+      if ((key.ctrl && key.name === "c") || (key.meta && key.name === "c")) {
+        this.closeModelPicker();
+        this.render();
+        return;
+      }
+      if (key.name === "up") {
+        this.moveModelPicker(-1);
+        this.render();
+        return;
+      }
+      if (key.name === "down") {
+        this.moveModelPicker(1);
+        this.render();
+        return;
+      }
+      if (key.name === "return") {
+        this.confirmModelPicker();
+        return;
+      }
+      if (key.name === "escape") {
+        this.closeModelPicker();
         this.render();
         return;
       }
@@ -871,7 +958,7 @@ class TypeScriptTui {
       this.flushKeyboardInput(chunk);
       return;
     }
-    if (!this.showSessionPicker && !this.showPermissionPicker && !this.permissionMode && !this.questionMode) {
+    if (!this.showSessionPicker && !this.showPermissionPicker && !this.showModelPicker && !this.permissionMode && !this.questionMode) {
       if (isCtrlJSequence(chunk)) {
         this.moveToolSelection(1);
         return;
@@ -895,6 +982,11 @@ class TypeScriptTui {
         this.render();
         return;
       }
+      if (this.showModelPicker) {
+        this.closeModelPicker();
+        this.render();
+        return;
+      }
       if (this.copySelectionIfPresent()) {
         return;
       }
@@ -915,7 +1007,7 @@ class TypeScriptTui {
       return;
     }
     if (isShiftEnterSequence(chunk)) {
-      if (!this.showSessionPicker && !this.showPermissionPicker && !this.permissionMode && !this.questionMode) {
+      if (!this.showSessionPicker && !this.showPermissionPicker && !this.showModelPicker && !this.permissionMode && !this.questionMode) {
         this.insertNewline();
       }
       return;
@@ -1168,6 +1260,12 @@ class TypeScriptTui {
       return;
     }
 
+    if (this.showModelPicker) {
+      this.closeModelPicker();
+      this.render();
+      return;
+    }
+
     if (this.permissionMode) {
       this.submitCurrentPermissionDecision("reject");
       return;
@@ -1404,6 +1502,25 @@ class TypeScriptTui {
           }
         }
         break;
+      case "model_list": {
+        this.modelPickerModels = event.models;
+        this.modelPickerIndex = 0;
+        this.modelPickerScroll = 0;
+        // 找到当前选中的模型
+        const currentIndex = this.modelPickerModels.findIndex(m => m.name === event.current);
+        if (currentIndex >= 0) {
+          this.modelPickerIndex = currentIndex;
+        }
+        this.showModelPicker = true;
+        break;
+      }
+      case "model_switched":
+        this.pushHistory({
+          kind: "message",
+          role: "system",
+          content: `已切换到模型 ${event.model_name} (${event.model})`,
+        });
+        break;
     }
     this.render();
   }
@@ -1411,6 +1528,7 @@ class TypeScriptTui {
   private applyStatusPayload(payload: StatusPayload): void {
     this.threadId = payload.thread_id;
     this.model = payload.model;
+    this.modelName = payload.model_name || "";
     this.subagentModel = payload.subagent_model;
     this.reasoningEffort = payload.reasoning_effort || "";
     this.cwd = payload.cwd;
@@ -1616,6 +1734,9 @@ class TypeScriptTui {
         });
         this.render();
         break;
+      case "models":
+        this.handleModelsCommand(args);
+        break;
       case "permission":
         this.handlePermissionCommand(args);
         break;
@@ -1624,6 +1745,18 @@ class TypeScriptTui {
         this.render();
         break;
     }
+  }
+
+  private handleModelsCommand(rawArgs: string): void {
+    const modelName = rawArgs.trim().toLowerCase();
+    if (!modelName) {
+      // 无参数时列出所有模型
+      this.sendBackend({ type: "list_models" });
+      return;
+    }
+
+    // 有参数时切换模型
+    this.sendBackend({ type: "switch_model", model: modelName });
   }
 
   private handlePermissionCommand(rawArgs: string): void {
@@ -2133,6 +2266,74 @@ class TypeScriptTui {
         lines.push(`    ${COLOR.secondary}${desc}${COLOR.reset}`);
       }
       lines.push("");
+    }
+
+    while (lines.length < maxHeight) lines.push("");
+    return lines;
+  }
+
+  // ── Model picker ───────────────────────────────────────────────
+  private moveModelPicker(delta: number): void {
+    if (this.modelPickerModels.length === 0) return;
+    this.modelPickerIndex = Math.max(0, Math.min(this.modelPickerModels.length - 1, this.modelPickerIndex + delta));
+  }
+
+  private confirmModelPicker(): void {
+    if (this.modelPickerModels.length === 0) return;
+    const selected = this.modelPickerModels[this.modelPickerIndex];
+    if (!selected) return;
+    this.closeModelPicker();
+    this.sendBackend({ type: "switch_model", model: selected.name });
+  }
+
+  private closeModelPicker(): void {
+    this.showModelPicker = false;
+    this.modelPickerModels = [];
+    this.modelPickerIndex = 0;
+    this.modelPickerScroll = 0;
+  }
+
+  private renderModelPicker(width: number, maxHeight: number): string[] {
+    const lines: string[] = [];
+    lines.push("");
+    lines.push(`${COLOR.accent}${COLOR.bold}  选择模型${COLOR.reset}`);
+    lines.push(`${COLOR.secondary}  ↑↓ 选择 · Enter 确认 · Esc 取消${COLOR.reset}`);
+    lines.push("");
+
+    if (this.modelPickerModels.length === 0) {
+      lines.push(`${COLOR.secondary}  没有可用模型${COLOR.reset}`);
+      while (lines.length < maxHeight) lines.push("");
+      return lines;
+    }
+
+    const visibleItems = maxHeight - 5;
+    // 计算滚动
+    if (this.modelPickerIndex < this.modelPickerScroll) {
+      this.modelPickerScroll = this.modelPickerIndex;
+    } else if (this.modelPickerIndex >= this.modelPickerScroll + visibleItems) {
+      this.modelPickerScroll = this.modelPickerIndex - visibleItems + 1;
+    }
+
+    const end = Math.min(this.modelPickerModels.length, this.modelPickerScroll + visibleItems);
+    for (let i = this.modelPickerScroll; i < end; i++) {
+      const m = this.modelPickerModels[i];
+      const selected = i === this.modelPickerIndex;
+      const marker = selected ? `${COLOR.accent}›${COLOR.reset} ` : "  ";
+      const nameLabel = m.name.split("/")[0];
+      const variantPart = m.name.includes("/") ? `/${m.name.split("/")[1]}` : "";
+      const modelId = ` ${COLOR.secondary}(${m.model})${COLOR.reset}`;
+      const defaultBadge = m.is_default === "true" ? ` ${COLOR.accent}[默认]${COLOR.reset}` : "";
+
+      const nameColor = selected ? COLOR.bold : "";
+      const nameLine = `${marker}${nameColor}${nameLabel}${COLOR.reset}${COLOR.secondary}${variantPart}${COLOR.reset}${modelId}${defaultBadge}`;
+      lines.push(nameLine);
+    }
+
+    if (this.modelPickerModels.length > visibleItems) {
+      const remaining = this.modelPickerModels.length - end;
+      if (remaining > 0) {
+        lines.push(`${COLOR.secondary}  ... 还有 ${remaining} 个${COLOR.reset}`);
+      }
     }
 
     while (lines.length < maxHeight) lines.push("");
@@ -2785,7 +2986,7 @@ class TypeScriptTui {
       this.render();
       return true;
     }
-    if (this.showPermissionPicker || this.permissionMode || this.questionMode) {
+    if (this.showPermissionPicker || this.showModelPicker || this.permissionMode || this.questionMode) {
       return true;
     }
     this.insertTextBlock(normalized);
@@ -2953,6 +3154,19 @@ class TypeScriptTui {
       return;
     }
 
+    if (this.showModelPicker) {
+      const picker = this.renderModelPicker(width, Math.max(8, height - header.length - 4));
+      const footer = [
+        "",
+        `${COLOR.secondary}↑↓ 选择  Enter 确认  Esc 取消${COLOR.reset}`,
+      ];
+      const frameLines = [...header, ...picker, ...footer];
+      const frame = frameLines.join("\n");
+      this.paintFrame(frame);
+      this.renderSelectionOverlay();
+      return;
+    }
+
     if (this.permissionMode) {
       const permissionUI = this.renderPermissionUI(width, Math.max(8, height - header.length - 4));
       const footer = [
@@ -3027,7 +3241,8 @@ class TypeScriptTui {
     // logo 右侧三行：thread、model、cwd
     const rightWidth = width - logoWidth - 2;
     const threadLabel = this.truncate(`thread: ${this.threadId.slice(-8) || "--------"}`, rightWidth);
-    const modelLabel = this.truncate(`model: ${[this.model, this.reasoningEffort].filter(Boolean).join(" ") || "-"}`, rightWidth);
+    const modelDisplay = this.modelName ? `${this.modelName} (${this.model})` : this.model;
+    const modelLabel = this.truncate(`model: ${[modelDisplay, this.reasoningEffort].filter(Boolean).join(" ") || "-"}`, rightWidth);
     const cwdLabel = this.truncate(`cwd: ${this.tildePath(this.cwd)}`, rightWidth);
 
     return [
@@ -3459,74 +3674,85 @@ class TypeScriptTui {
     return typeof value === "string" ? value : "";
   }
 
-  private getTodoItemsFromTool(tool: ToolCall): string[] {
+  private getTodoItemsFromTool(tool: ToolCall): { content: string; status: string }[] {
     const rawTodos = tool.args?.todos;
     if (Array.isArray(rawTodos)) {
+      // 新格式：{ content, status } 对象数组
+      const newFormat = rawTodos.filter(
+        (item): item is { content: string; status: string } =>
+          typeof item === "object" && item !== null && typeof item.content === "string"
+      );
+      if (newFormat.length > 0) {
+        return newFormat.map((item) => ({
+          content: item.content.trim(),
+          status: typeof item.status === "string" ? item.status : "pending",
+        }));
+      }
+      // 兼容旧格式：字符串数组
       return rawTodos
         .filter((item): item is string => typeof item === "string")
-        .map((item) => item.trim())
-        .filter(Boolean);
+        .map((item) => ({ content: item.trim(), status: "pending" }));
     }
 
+    // 从 output 解析（备用）
     const output = tool.output?.trim() || "";
     if (!output) {
       return [];
     }
     return output
       .split("\n")
-      .map((line) => line.match(/^\s*-\s+(.*)$/)?.[1]?.trim() || "")
-      .filter(Boolean);
+      .map((line) => {
+        const match = line.match(/^\s*-\s*([□◐■])\s+(.*)$/);
+        if (match) {
+          const statusMap: Record<string, string> = { "□": "pending", "◐": "in_progress", "■": "completed" };
+          return { content: match[2]?.trim() || "", status: statusMap[match[1] || "□"] || "pending" };
+        }
+        const simpleMatch = line.match(/^\s*-\s+(.*)$/);
+        return simpleMatch ? { content: simpleMatch[1]?.trim() || "", status: "pending" } : null;
+      })
+      .filter((item): item is { content: string; status: string } => item !== null && item.content);
   }
 
-  private getPreviousPlanTodos(tool: ToolCall): string[] {
-    const currentIndex = this.getToolHistoryIndex(tool);
-    if (currentIndex <= 0) {
-      return [];
-    }
-    for (let index = currentIndex - 1; index >= 0; index -= 1) {
-      const entry = this.history[index];
-      if (entry?.kind === "tool" && entry.name === "todo_write" && this.isToolSuccessful(entry)) {
-        return this.getTodoItemsFromTool(entry);
-      }
-    }
-    return [];
-  }
-
-  private summarizePlanItems(items: string[], width: number): string {
+  private summarizePlanItems(items: { content: string; status: string }[], width: number): string {
     if (items.length === 0) {
       return "暂无待办事项。";
     }
-    if (items.length === 1) {
-      return items[0] || "暂无待办事项。";
+    const pending = items.filter((i) => i.status !== "completed");
+    if (pending.length === 0) {
+      return "所有任务已完成。";
     }
-    const joined = items.join("；");
+    const contents = pending.map((i) => i.content);
+    if (contents.length === 1) {
+      return contents[0] || "暂无待办事项。";
+    }
+    const joined = contents.join("；");
     if (this.visibleLength(joined) <= width) {
       return joined;
     }
-    return `共 ${items.length} 项待办`;
+    return `共 ${contents.length} 项待办`;
   }
 
   private renderPlanToolBlock(tool: ToolCall, width: number): string[] {
     const selected = tool.id === this.selectedToolId;
     const items = this.getTodoItemsFromTool(tool);
-    const previousItems = this.getPreviousPlanTodos(tool);
-    const completedItems = previousItems.filter((item) => !items.includes(item));
+    const pendingItems = items.filter((i) => i.status !== "completed");
+    const completedItems = items.filter((i) => i.status === "completed");
     const headerColor = selected ? COLOR.selectedText : COLOR.accent;
     const detailColor = selected ? COLOR.selectedSubtle : COLOR.secondary;
     let title = "Plan";
 
     if (tool.status === "running") {
-      title = previousItems.length > 0 ? "Updating Plan" : "Planning";
+      title = pendingItems.length > 0 || completedItems.length > 0 ? "Updating Plan" : "Planning";
     } else if (items.length === 0) {
-      title = previousItems.length > 0 ? "Cleared Plan" : "Plan";
-    } else if (previousItems.length > 0) {
+      title = "Plan";
+    } else if (completedItems.length > 0) {
       title = "Updated Plan";
     }
 
     let summary = this.summarizePlanItems(items, Math.max(12, width - 8));
     if (tool.status === "running" && items.length === 0) {
       summary = "正在整理待办事项。";
-    } else if (tool.status === "done" && items.length === 0 && previousItems.length > 0) {
+    } else if (tool.status === "done" && items.length === 0) {
       summary = "已清空待办事项。";
     }
 
@@ -3535,18 +3761,22 @@ class TypeScriptTui {
     rows.push(this.styleToolRow(`${detailColor}  └ ${summary}${COLOR.reset}`, width, selected));
 
     const itemColor = selected ? COLOR.selectedText : COLOR.soft;
-    for (const item of items) {
-      const wrapped = this.wrap(item, Math.max(12, width - 8));
+    const completedColor = selected ? COLOR.selectedSubtle : COLOR.secondary;
+
+    // 先显示待办和进行中的任务
+    for (const item of pendingItems) {
+      const wrapped = this.wrap(item.content, Math.max(12, width - 8));
       const segments = wrapped.length > 0 ? wrapped : [""];
+      const mark = item.status === "in_progress" ? "◐" : "□";
       segments.forEach((segment, index) => {
-        const prefix = index === 0 ? "    □ " : "      ";
+        const prefix = index === 0 ? `    ${mark} ` : "      ";
         rows.push(this.styleToolRow(`${itemColor}${prefix}${segment}${COLOR.reset}`, width, selected));
       });
     }
 
-    const completedColor = selected ? COLOR.selectedSubtle : COLOR.secondary;
+    // 再显示已完成的任务（灰色）
     for (const item of completedItems) {
-      const wrapped = this.wrap(item, Math.max(12, width - 8));
+      const wrapped = this.wrap(item.content, Math.max(12, width - 8));
       const segments = wrapped.length > 0 ? wrapped : [""];
       segments.forEach((segment, index) => {
         const prefix = index === 0 ? "    ■ " : "      ";

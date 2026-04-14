@@ -15,6 +15,10 @@ from nocode_agent.persistence import (
     load_thread_messages,
     resolve_checkpoint_path,
 )
+from nocode_agent.config import (
+    list_available_models,
+    resolve_model_config,
+)
 from nocode_agent.runtime.bootstrap import (
     configure_runtime_logging,
     create_agent_from_config,
@@ -25,6 +29,7 @@ from nocode_agent.tool.kit import _sanitize_text
 logger = logging.getLogger(__name__)
 
 _stream_task: asyncio.Task | None = None
+_current_model_name: str = ""  # 当前使用的模型名称（对应 models 段的 key）
 
 
 async def _build_agent(config: dict[str, Any]):
@@ -50,6 +55,7 @@ def _build_status_event(agent, config: dict[str, Any], event_type: str = "status
         "type": event_type,
         "thread_id": agent.thread_id,
         "model": agent.model_name,
+        "model_name": _current_model_name,  # 模型配置名称
         "subagent_model": agent.subagent_model_name,
         "reasoning_effort": getattr(agent, "reasoning_effort", ""),
         "cwd": os.getcwd(),
@@ -59,6 +65,7 @@ def _build_status_event(agent, config: dict[str, Any], event_type: str = "status
 
 
 async def _stream_prompt(agent, prompt: str, config: dict[str, Any]) -> None:
+    global _last_tokens_left_percent
     logger.info("Prompt started: thread=%s, chars=%d", getattr(agent, "thread_id", "-"), len(prompt))
     try:
         async for event_type, *data in agent.chat(prompt):
@@ -66,7 +73,6 @@ async def _stream_prompt(agent, prompt: str, config: dict[str, Any]) -> None:
                 payload = data[0] if data else {}
                 if isinstance(payload, dict):
                     if payload.get("type") == "token_usage":
-                        global _last_tokens_left_percent
                         _last_tokens_left_percent = max(
                             0, min(100, payload.get("tokens_left_percent", _last_tokens_left_percent))
                         )
@@ -131,6 +137,7 @@ async def _stream_prompt(agent, prompt: str, config: dict[str, Any]) -> None:
 
 
 async def _handle_message(agent, payload: dict[str, Any], config: dict[str, Any]) -> bool:
+    global _current_model_name, _last_tokens_left_percent
     message_type = payload.get("type")
 
     if message_type == "clear":
@@ -140,6 +147,40 @@ async def _handle_message(agent, payload: dict[str, Any], config: dict[str, Any]
 
     if message_type == "status":
         _emit(_build_status_event(agent, config))
+        return True
+
+    if message_type == "list_models":
+        """列出所有可用模型。"""
+        models = list_available_models(config)
+        default_model = config.get("default_model", "")
+        _emit({
+            "type": "model_list",
+            "models": models,
+            "current": _current_model_name,
+            "default": default_model,
+        })
+        return True
+
+    if message_type == "switch_model":
+        """切换模型。"""
+        target_model = str(payload.get("model", "")).strip()
+        if not target_model:
+            _emit({"type": "error", "message": "empty model name"})
+            return True
+
+        available = list_available_models(config)
+        available_names = [m.get("name", "") for m in available]
+        if target_model not in available_names:
+            _emit({"type": "error", "message": f"model '{target_model}' not found. Available: {', '.join(available_names)}"})
+            return True
+
+        try:
+            model_cfg = resolve_model_config(config, target_model)
+            logger.info("Switching model: %s -> %s (%s)", _current_model_name, target_model, model_cfg.get("model"))
+            _current_model_name = target_model
+            _emit({"type": "model_switched", "model_name": target_model, "model": model_cfg.get("model")})
+        except ValueError as error:
+            _emit({"type": "error", "message": str(error)})
         return True
 
     if message_type == "list_threads":
@@ -161,7 +202,6 @@ async def _handle_message(agent, payload: dict[str, Any], config: dict[str, Any]
         estimated = estimate_thread_tokens(db_path, target_thread)
         tokens_left = max(0, context_window - estimated)
         tokens_left_percent = max(0, min(100, round(tokens_left * 100 / context_window)))
-        global _last_tokens_left_percent
         _last_tokens_left_percent = tokens_left_percent
         _emit(_build_status_event(agent, config, event_type="resumed"))
         return True
@@ -180,10 +220,11 @@ async def _handle_message(agent, payload: dict[str, Any], config: dict[str, Any]
 
 
 async def main() -> int:
-    global _stream_task
+    global _stream_task, _current_model_name
     try:
         config = load_runtime_config()
         configure_runtime_logging(config)
+        _current_model_name = config.get("default_model", "")
         agent = await _build_agent(config)
     except Exception as error:
         configure_runtime_logging()
