@@ -373,7 +373,7 @@ export default function App({ resume = false, model }: Props) {
       cycleToolSelection(1);
       return;
     }
-    if ((key.ctrl && keyInput === 'k') || (key.ctrl && keyInput === 'p')) {
+    if (key.ctrl && keyInput === 'p') {
       cycleToolSelection(-1);
       return;
     }
