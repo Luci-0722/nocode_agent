@@ -23,6 +23,7 @@ from .shell import BashInput, bash
 from .interactive import (
     AskUserQuestionInput,
     TodoInput,
+    TodoItem,
     make_ask_user_question_tool,
     todo_read,
     todo_write,
@@ -62,6 +63,7 @@ __all__ = [
     "SUBAGENT_TOOL_TYPES",
     "SUBAGENT_TYPE_DESCRIPTION",
     "TodoInput",
+    "TodoItem",
     "ToolSafety",
     "WriteInput",
     "WebFetchInput",

@@ -74,18 +74,33 @@ def make_ask_user_question_tool(
     return ask_user_question
 
 
+class TodoItem(BaseModel):
+    content: str = Field(description="待办事项内容。")
+    status: str = Field(default="pending", description="状态：pending、in_progress 或 completed。")
+
+
 class TodoInput(BaseModel):
-    todos: list[str] = Field(description="待办事项列表。")
+    todos: list[TodoItem] = Field(description="待办事项列表。")
 
 
 @tool("todo_write", args_schema=TodoInput)
-def todo_write(todos: list[str]) -> str:
+def todo_write(todos: list[TodoItem]) -> str:
     """更新当前会话的待办事项。"""
     global _TODO_STORE
-    _TODO_STORE = [item.strip() for item in todos if item.strip()]
+    _TODO_STORE = [
+        {"content": item.content.strip(), "status": item.status}
+        for item in todos
+        if item.content.strip()
+    ]
     if not _TODO_STORE:
         return "待办列表已清空。"
-    return "待办列表已更新：\n" + "\n".join(f"- {item}" for item in _TODO_STORE)
+    lines = ["待办列表已更新："]
+    for item in _TODO_STORE:
+        status_mark = {"pending": "□", "in_progress": "◐", "completed": "■"}.get(
+            item["status"], "□"
+        )
+        lines.append(f"- {status_mark} {item['content']}")
+    return "\n".join(lines)
 
 
 @tool("todo_read")
@@ -93,12 +108,19 @@ def todo_read() -> str:
     """读取当前会话的待办事项。"""
     if not _TODO_STORE:
         return "当前没有待办事项。"
-    return "\n".join(f"- {item}" for item in _TODO_STORE)
+    lines = []
+    for item in _TODO_STORE:
+        status_mark = {"pending": "□", "in_progress": "◐", "completed": "■"}.get(
+            item["status"], "□"
+        )
+        lines.append(f"- {status_mark} {item['content']}")
+    return "\n".join(lines)
 
 
 __all__ = [
     "AskUserQuestionInput",
     "TodoInput",
+    "TodoItem",
     "make_ask_user_question_tool",
     "todo_read",
     "todo_write",

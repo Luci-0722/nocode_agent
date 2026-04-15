@@ -8,6 +8,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+import httpx
 from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from langgraph.types import Command
 
@@ -24,29 +25,51 @@ _MAX_RETRIES = 5
 _BASE_RETRY_DELAY = 2.0
 
 
+def _iter_exception_chain(exc: BaseException):
+    """遍历异常链，避免只看到最外层包装异常。"""
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        yield current
+        next_exc = current.__cause__ or current.__context__
+        current = next_exc if isinstance(next_exc, BaseException) else None
+
+
 def _is_retryable_error(exc: Exception) -> bool:
     """判断是否为可重试的 API 错误（429、5xx、网络超时等）。"""
-    exc_str = str(exc).lower()
-    # HTTP 429 rate limit
-    if "429" in exc_str or "rate" in exc_str or "速率" in exc_str:
-        return True
-    # HTTP 5xx server errors
-    if any(code in exc_str for code in ("500", "502", "503", "504")):
-        return True
-    # Connection / timeout errors
-    if isinstance(exc, (ConnectionError, TimeoutError, asyncio.TimeoutError)):
-        return True
-    for klass in (
-        "ConnectionError",
-        "TimeoutError",
-        "APIConnectionError",
-        "APITimeoutError",
-        "RateLimitError",
-        "InternalServerError",
-        "ServiceUnavailableError",
-    ):
-        if klass in type(exc).__name__:
+    for current in _iter_exception_chain(exc):
+        exc_str = str(current).lower()
+        # HTTP 429 rate limit
+        if "429" in exc_str or "rate" in exc_str or "速率" in exc_str:
             return True
+        # HTTP 5xx server errors
+        if any(code in exc_str for code in ("500", "502", "503", "504")):
+            return True
+        # Connection / timeout errors
+        if isinstance(
+            current,
+            (
+                ConnectionError,
+                TimeoutError,
+                asyncio.TimeoutError,
+                httpx.TimeoutException,
+                httpx.TransportError,
+            ),
+        ):
+            return True
+        for klass in (
+            "ConnectionError",
+            "ReadTimeout",
+            "TimeoutError",
+            "APIConnectionError",
+            "APITimeoutError",
+            "RateLimitError",
+            "InternalServerError",
+            "ServiceUnavailableError",
+        ):
+            if klass in type(current).__name__:
+                return True
     return False
 
 
