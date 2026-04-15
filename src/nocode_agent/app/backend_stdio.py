@@ -17,7 +17,9 @@ from nocode_agent.persistence import (
 )
 from nocode_agent.config import (
     list_available_models,
+    load_global_config,
     resolve_model_config,
+    save_global_default_model,
 )
 from nocode_agent.runtime.bootstrap import (
     configure_runtime_logging,
@@ -32,10 +34,42 @@ _stream_task: asyncio.Task | None = None
 _current_model_name: str = ""  # 当前使用的模型名称（对应 models 段的 key）
 
 
-async def _build_agent(config: dict[str, Any]):
+def _resolve_initial_model_name(config: dict[str, Any]) -> str:
+    available_names = {
+        str(model.get("name", "") or "").strip()
+        for model in list_available_models(config)
+        if str(model.get("name", "") or "").strip()
+    }
+
+    explicit_model = str(os.environ.get("NOCODE_MODEL_NAME", "") or "").strip()
+    if explicit_model:
+        if explicit_model in available_names:
+            return explicit_model
+        logger.warning("Ignoring invalid NOCODE_MODEL_NAME=%s", explicit_model)
+
+    global_default_model = str(load_global_config().get("default_model", "") or "").strip()
+    if global_default_model:
+        if global_default_model in available_names:
+            return global_default_model
+        logger.warning("Ignoring invalid ~/.nocode/config.yaml default_model=%s", global_default_model)
+
+    default_model = str(config.get("default_model", "") or "").strip()
+    if default_model:
+        return default_model
+
+    return next(iter(available_names), "")
+
+
+async def _build_agent(
+    config: dict[str, Any],
+    *,
+    thread_id: str | None = None,
+    model_name: str | None = None,
+):
     return await create_agent_from_config(
         config,
-        thread_id=os.environ.get("NOCODE_THREAD_ID") or None,
+        thread_id=thread_id or os.environ.get("NOCODE_THREAD_ID") or None,
+        model_name=model_name,
     )
 
 
@@ -136,21 +170,20 @@ async def _stream_prompt(agent, prompt: str, config: dict[str, Any]) -> None:
     _emit({"type": "done"})
 
 
-async def _handle_message(agent, payload: dict[str, Any], config: dict[str, Any]) -> bool:
-    global _current_model_name, _last_tokens_left_percent
+async def _handle_message(agent, payload: dict[str, Any], config: dict[str, Any]) -> tuple[Any, bool]:
+    global _current_model_name, _last_tokens_left_percent, _stream_task
     message_type = payload.get("type")
 
     if message_type == "clear":
         await agent.clear()
         _emit({"type": "cleared", "thread_id": agent.thread_id})
-        return True
+        return agent, True
 
     if message_type == "status":
         _emit(_build_status_event(agent, config))
-        return True
+        return agent, True
 
     if message_type == "list_models":
-        """列出所有可用模型。"""
         models = list_available_models(config)
         default_model = config.get("default_model", "")
         _emit({
@@ -159,44 +192,54 @@ async def _handle_message(agent, payload: dict[str, Any], config: dict[str, Any]
             "current": _current_model_name,
             "default": default_model,
         })
-        return True
+        return agent, True
 
     if message_type == "switch_model":
-        """切换模型。"""
         target_model = str(payload.get("model", "")).strip()
         if not target_model:
             _emit({"type": "error", "message": "empty model name"})
-            return True
+            return agent, True
+
+        if _stream_task and not _stream_task.done():
+            _emit({"type": "error", "message": "cannot switch model while generation is running"})
+            return agent, True
 
         available = list_available_models(config)
         available_names = [m.get("name", "") for m in available]
         if target_model not in available_names:
             _emit({"type": "error", "message": f"model '{target_model}' not found. Available: {', '.join(available_names)}"})
-            return True
+            return agent, True
 
         try:
             model_cfg = resolve_model_config(config, target_model)
             logger.info("Switching model: %s -> %s (%s)", _current_model_name, target_model, model_cfg.get("model"))
+            next_agent = await _build_agent(
+                config,
+                thread_id=getattr(agent, "thread_id", None),
+                model_name=target_model,
+            )
             _current_model_name = target_model
+            save_global_default_model(target_model)
             _emit({"type": "model_switched", "model_name": target_model, "model": model_cfg.get("model")})
+            _emit(_build_status_event(next_agent, config))
+            return next_agent, True
         except ValueError as error:
             _emit({"type": "error", "message": str(error)})
-        return True
+            return agent, True
 
     if message_type == "list_threads":
         db_path = resolve_checkpoint_path(config)
         source_filter = str(payload.get("source", "")).strip() or "tui"
         threads = list_threads(db_path, source=source_filter)
         _emit({"type": "thread_list", "threads": threads})
-        return True
+        return agent, True
 
     if message_type == "resume_thread":
         target_thread = str(payload.get("thread_id", "")).strip()
         if not target_thread:
             _emit({"type": "error", "message": "empty thread_id for resume"})
-            return True
+            return agent, True
         agent._thread_id = target_thread
-        # 恢复会话时重新计算 token 占用
         db_path = resolve_checkpoint_path(config)
         context_window = max(1, int(getattr(agent, "context_window", 128_000) or 128_000))
         estimated = estimate_thread_tokens(db_path, target_thread)
@@ -204,19 +247,19 @@ async def _handle_message(agent, payload: dict[str, Any], config: dict[str, Any]
         tokens_left_percent = max(0, min(100, round(tokens_left * 100 / context_window)))
         _last_tokens_left_percent = tokens_left_percent
         _emit(_build_status_event(agent, config, event_type="resumed"))
-        return True
+        return agent, True
 
     if message_type == "load_history":
         db_path = resolve_checkpoint_path(config)
         messages = load_thread_messages(db_path, thread_id=agent.thread_id)
         _emit({"type": "history", "messages": messages})
-        return True
+        return agent, True
 
     if message_type == "exit":
-        return False
+        return agent, False
 
     _emit({"type": "error", "message": f"unknown message type: {message_type}"})
-    return True
+    return agent, True
 
 
 async def main() -> int:
@@ -224,8 +267,10 @@ async def main() -> int:
     try:
         config = load_runtime_config()
         configure_runtime_logging(config)
-        _current_model_name = config.get("default_model", "")
-        agent = await _build_agent(config)
+        _current_model_name = _resolve_initial_model_name(config) or str(config.get("default_model", "") or "").strip()
+        agent = await _build_agent(config, model_name=_current_model_name or None)
+        if _current_model_name:
+            save_global_default_model(_current_model_name)
     except Exception as error:
         configure_runtime_logging()
         logger.error("Fatal error during initialization: %s", error)
@@ -293,7 +338,7 @@ async def main() -> int:
                 _emit({"type": "status", "message": "idle"})
             continue
 
-        should_continue = await _handle_message(agent, payload, config)
+        agent, should_continue = await _handle_message(agent, payload, config)
         if not should_continue:
             break
 

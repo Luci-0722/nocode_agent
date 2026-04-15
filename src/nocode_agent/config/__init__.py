@@ -20,6 +20,10 @@ DEFAULT_CONFIG_PATH = runtime_root() / "config.yaml"
 GLOBAL_CONFIG_PATH = Path.home() / ".nocode" / "config.yaml"
 
 
+def _resolve_global_config_path() -> Path:
+    return Path.home() / ".nocode" / "config.yaml"
+
+
 def _resolve_proxy_section(config: dict[str, Any]) -> tuple[str, Any]:
     """提取代理主配置，兼容字符串和对象两种写法。"""
     proxy_value = config.get("proxy", "")
@@ -60,23 +64,46 @@ def load_config(config_path: str | None = None) -> dict[str, Any]:
         or str(DEFAULT_CONFIG_PATH)
     )
     config_file = Path(resolved).expanduser()
+    global_config_path = _resolve_global_config_path()
     try:
         with open(config_file, encoding="utf-8") as handle:
             return yaml.safe_load(handle) or {}
     except FileNotFoundError:
         # 项目级配置不存在时，回退到全局配置 ~/.nocode/config.yaml
-        if config_file != GLOBAL_CONFIG_PATH:
+        if config_file != global_config_path:
             logger.debug(
                 "Config not found at %s, trying global config at %s",
-                config_file, GLOBAL_CONFIG_PATH,
+                config_file, global_config_path,
             )
             try:
-                with open(GLOBAL_CONFIG_PATH, encoding="utf-8") as handle:
+                with open(global_config_path, encoding="utf-8") as handle:
                     return yaml.safe_load(handle) or {}
             except FileNotFoundError:
                 pass
         logger.debug("Config file not found: %s", config_file)
         return {}
+
+
+def load_global_config() -> dict[str, Any]:
+    config_file = _resolve_global_config_path()
+    try:
+        with open(config_file, encoding="utf-8") as handle:
+            return yaml.safe_load(handle) or {}
+    except FileNotFoundError:
+        return {}
+
+
+def save_global_default_model(model_name: str) -> None:
+    selected = str(model_name or "").strip()
+    if not selected:
+        return
+
+    config_file = _resolve_global_config_path()
+    payload = load_global_config()
+    payload["default_model"] = selected
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(config_file, "w", encoding="utf-8") as handle:
+        yaml.safe_dump(payload, handle, allow_unicode=True, sort_keys=False)
 
 
 def _is_local_base_url(base_url: str) -> bool:
@@ -253,19 +280,29 @@ def list_available_models(config: dict[str, Any]) -> list[dict[str, str]]:
     if not isinstance(models_section, dict):
         return []
 
+    default_name = str(config.get("default_model", "") or "").strip()
     result: list[dict[str, str]] = []
     for cfg_name, cfg in models_section.items():
         if not isinstance(cfg, dict):
             continue
         default_model_id = cfg.get("model", "")
         if default_model_id:
-            result.append({"name": cfg_name, "model": default_model_id, "is_default": "true"})
+            result.append({
+                "name": cfg_name,
+                "model": default_model_id,
+                "is_default": "true" if cfg_name == default_name else "false",
+            })
         # 添加 variants
         variants = cfg.get("variants", [])
         if isinstance(variants, list):
             for variant_id in variants:
                 if variant_id and str(variant_id) != default_model_id:
-                    result.append({"name": f"{cfg_name}/{variant_id}", "model": str(variant_id), "is_default": "false"})
+                    variant_name = f"{cfg_name}/{variant_id}"
+                    result.append({
+                        "name": variant_name,
+                        "model": str(variant_id),
+                        "is_default": "true" if variant_name == default_name else "false",
+                    })
     return result
 
 
@@ -318,7 +355,10 @@ def resolve_model_config(config: dict[str, Any], model_name: str | None = None) 
 
 __all__ = [
     "DEFAULT_CONFIG_PATH",
+    "GLOBAL_CONFIG_PATH",
     "load_config",
+    "load_global_config",
+    "save_global_default_model",
     "normalize_model_base_url",
     "resolve_api_key",
     "resolve_model_provider",

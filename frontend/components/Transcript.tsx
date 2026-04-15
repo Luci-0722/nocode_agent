@@ -25,7 +25,7 @@ export default function Transcript() {
 
   const width = Math.max(24, (stdout.columns || 80) - 2);
   const visibleCount = Math.max(4, (stdout.rows || 24) - 12);
-  const emptyStateTopSpacing = Math.max(5, Math.min(7, Math.floor((stdout.rows || 24) * 0.24)));
+  const emptyStateTopSpacing = Math.max(4, Math.min(6, Math.floor((stdout.rows || 24) * 0.2)));
   const maxOffset = Math.max(0, items.length - visibleCount);
   const clampedOffset = Math.max(0, Math.min(maxOffset, transcriptScroll));
   const selectedIndex = selectedToolId
@@ -45,27 +45,31 @@ export default function Transcript() {
   const visible = items.slice(start, start + visibleCount);
 
   return (
-    <Box flexDirection="column" paddingX={1}>
+    <Box flexDirection="column" paddingX={1} flexGrow={1}>
       {clampedOffset > 0 && (
         <Ansi>{`${COLOR.secondary}Showing older messages. PageDown returns to the latest output.${COLOR.reset}`}</Ansi>
       )}
-      {visible.length === 0 && !generating && (
-        <Box flexDirection="column">
-          {Array.from({ length: emptyStateTopSpacing }).map((_, index) => (
-            <Text key={`empty-space-${index}`}> </Text>
-          ))}
-          <Ansi>{`${COLOR.secondary}  输入 / 打开命令列表，或使用 /help 查看全部命令。${COLOR.reset}`}</Ansi>
-          <Text> </Text>
-        </Box>
-      )}
-      {visible.map((message) => (
-        <Message
-          key={message.id}
-          message={message}
-          width={width}
-          selected={message.kind === 'tool' && message.id === selectedToolId}
-        />
-      ))}
+      <Box flexDirection="column" flexGrow={1} justifyContent="flex-end">
+        {visible.length === 0 && !generating ? (
+          <Box flexDirection="column">
+            {Array.from({ length: emptyStateTopSpacing }).map((_, index) => (
+              <Text key={`empty-space-${index}`}> </Text>
+            ))}
+            <Ansi>{`${COLOR.secondary}  输入 / 打开命令列表，或使用 /help 查看全部命令。${COLOR.reset}`}</Ansi>
+            <Text> </Text>
+            <Text> </Text>
+          </Box>
+        ) : (
+          visible.map((message) => (
+            <Message
+              key={message.id}
+              message={message}
+              width={width}
+              selected={message.kind === 'tool' && message.id === selectedToolId}
+            />
+          ))
+        )}
+      </Box>
     </Box>
   );
 }

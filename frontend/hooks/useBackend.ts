@@ -564,6 +564,7 @@ export function useBackend(config: BackendConfig = {}) {
       cwd: process.cwd(),
       env: {
         ...baseEnv,
+        ...(config.model ? { NOCODE_MODEL_NAME: config.model } : {}),
         PYTHONPATH: pythonPathEntries.join(path.delimiter),
       },
       stdio: ['pipe', 'pipe', 'pipe'],

@@ -15,6 +15,8 @@
 - 修复中文输入法一次提交多个汉字时被拆成单字符的问题
 - 恢复 `/` 命令候选菜单、方向键选择、Tab 补全与 Enter 执行
 - 调整空会话初始留白，避免 logo 与输入区过于拥挤
+- transcript 改为贴底布局，短对话时也保留顶部呼吸感
+- 模型默认值改为从 `~/.nocode/config.yaml` 读取并写回
 
 ## 设计说明
 
@@ -99,6 +101,22 @@
 - `Enter` 在未精确匹配时先补全，在精确匹配时直接执行
 - 命令帮助文案与候选来源统一复用共享定义
 
+### 6. 模型默认值持久化
+
+调整：
+
+- `src/nocode_agent/config/__init__.py`
+- `src/nocode_agent/app/backend_stdio.py`
+- `frontend/hooks/useBackend.ts`
+- `frontend/components/ModelPicker.tsx`
+
+实现改为：
+
+- 启动时优先读取 `~/.nocode/config.yaml` 中的 `default_model`
+- 手动切换模型后，把新的 `default_model` 写回 `~/.nocode/config.yaml`
+- `--model` 显式启动参数仍然优先于全局默认模型
+- model picker 里补充 `current` 标记，并修正 `default` 只显示一次
+
 ## 测试
 
 已验证：
@@ -121,6 +139,7 @@ python3 -m unittest \
 - context status line
 - `/` 输入后即时弹出的命令候选菜单
 - `Tab` 补全 `/help`，`Enter` 正常执行
+- `~/.nocode/config.yaml` 中的 `default_model` 会影响下次启动
 
 ## 后续手工回归建议
 
@@ -131,3 +150,4 @@ python3 -m unittest \
 - 生成中 spinner / elapsed time 是否持续刷新
 - 工具调用选中、展开、折叠
 - slash command 菜单在 `/m`、`/per`、`/res` 等前缀下的筛选和补全行为
+- 切换模型后重启 TUI，确认会自动命中上次写入 `~/.nocode/config.yaml` 的默认模型
