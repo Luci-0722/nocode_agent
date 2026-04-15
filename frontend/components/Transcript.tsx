@@ -25,6 +25,7 @@ export default function Transcript() {
 
   const width = Math.max(24, (stdout.columns || 80) - 2);
   const visibleCount = Math.max(4, (stdout.rows || 24) - 12);
+  const emptyStateTopSpacing = Math.max(5, Math.min(7, Math.floor((stdout.rows || 24) * 0.24)));
   const maxOffset = Math.max(0, items.length - visibleCount);
   const clampedOffset = Math.max(0, Math.min(maxOffset, transcriptScroll));
   const selectedIndex = selectedToolId
@@ -50,8 +51,11 @@ export default function Transcript() {
       )}
       {visible.length === 0 && !generating && (
         <Box flexDirection="column">
-          <Text> </Text>
+          {Array.from({ length: emptyStateTopSpacing }).map((_, index) => (
+            <Text key={`empty-space-${index}`}> </Text>
+          ))}
           <Ansi>{`${COLOR.secondary}  输入 / 打开命令列表，或使用 /help 查看全部命令。${COLOR.reset}`}</Ansi>
+          <Text> </Text>
         </Box>
       )}
       {visible.map((message) => (
