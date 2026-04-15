@@ -13,5 +13,5 @@
     "resolveJsonModule": true
   },
   "include": ["./**/*.ts", "./**/*.tsx"],
-  "exclude": ["node_modules", "dist", "tui.ts", "input_protocol.ts", "terminal_utils.ts"]
+  "exclude": ["node_modules", "dist"]
 }

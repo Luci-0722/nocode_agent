@@ -28,10 +28,10 @@
 当前主线：
 
 - Python 包代码集中在 `src/nocode_agent/`
-- 终端界面入口在 `frontend/tui.ts`
+- 终端界面入口在 `frontend/index.tsx`
 - 启动脚本是根目录 `nocode`
 - 默认配置模板是 `config.example.yaml`
-- 运行时状态默认写入项目根下的 `.state/`
+- 运行时状态默认写入 `~/.nocode/projects/<project-hash>/`
 - subagent 统一从项目 `.nocode/agents/` 和用户 `~/.nocode/agents/` 发现；仓库默认 agent 也已经迁到项目 `.nocode/agents/`
 
 ## 目录结构
@@ -54,9 +54,11 @@ src/nocode_agent/
   bundled_skills/ 仓库自带 skills
 
 frontend/
-  tui.ts                 TUI 主入口
-  input_protocol.ts      原始输入协议解析
-  terminal_utils.ts      终端控制、滚轮、剪贴板等工具
+  index.tsx              Ink 入口
+  App.tsx                TUI 主 REPL
+  components/            Header / Transcript / Composer / dialogs
+  hooks/                 Zustand 状态与 backend 通信
+  types/                 前后端事件类型
 
 .nocode/agents/          项目级 subagent 定义（运行时发现，仓库默认 agent 也放这里）
 
@@ -86,7 +88,7 @@ nocode
 未安装启动器时：
 
 ```bash
-node frontend/tui.ts
+node frontend/dist/index.js
 ```
 
 恢复会话：
@@ -128,13 +130,13 @@ PYTHONPATH=src python3 -m nocode_agent.app.backend_stdio
 
 - TUI、启动器、路径解析、后端启动相关改动，优先关注 `tests/test_startup_smoke.py`
 - 交互行为改动除了自动测试，通常还需要补一轮手工验证
-- 如果改动影响启动流程，重点检查 `.venv`、`NOCODE_PROJECT_DIR`、日志路径、`.state/` 路径
+- 如果改动影响启动流程，重点检查 `.venv`、`NOCODE_PROJECT_DIR`、日志路径、`~/.nocode/projects/<project-hash>/` 路径
 
 ## TUI / Terminal 开发提示
 
 这部分和终端交互实现强相关，前端交互逻辑变化后应同步更新。
 
-这部分是高频踩坑区，改动 `frontend/tui.ts`、`frontend/input_protocol.ts`、`frontend/terminal_utils.ts` 时建议重点关注。
+这部分是高频踩坑区，改动 `frontend/App.tsx`、`frontend/components/*`、`frontend/hooks/*` 时建议重点关注。
 
 - TUI 开发的时候，注意输入光标要在输入框中
 - 改动输入区渲染、换行、滚动、loading spinner、高度计算后，要重新检查光标定位
@@ -175,9 +177,9 @@ PYTHONPATH=src python3 -m nocode_agent.app.backend_stdio
   正确做法：所有退出路径都走统一收尾逻辑，确保关闭 mouse tracking、keyboard protocol、alt screen，并恢复 `stdin` raw mode。
   最小验证：至少看一轮 `Ctrl+C`、正常退出、backend fatal 这几种退出路径。
 
-- [路径解析] 错误现象：相对路径跟着启动目录飘，导致 `.state/`、数据库或日志写到错误位置。
-  正确做法：运行时相对路径统一锚定项目根，优先复用 `runtime/paths.py` 的解析逻辑。
-  最小验证：从仓库根、子目录、只读目录分别启动，确认状态文件仍落在目标项目根下。
+- [路径解析] 错误现象：相对路径跟着启动目录飘，导致数据库或日志写到错误位置。
+  正确做法：agent 工作目录跟随当前终端目录；运行时状态默认写入 `~/.nocode/projects/<project-hash>/`，相对业务路径再统一锚定项目根，优先复用 `runtime/paths.py` 的解析逻辑。
+  最小验证：从仓库根、子目录、只读目录分别启动，确认工作目录正确且状态文件仍落在 `~/.nocode/projects/<project-hash>/`。
 
 - [启动器项目根] 错误现象：通过软链接或外部 shell 环境启动时，误用了旧的 `NOCODE_PROJECT_DIR`，导致读取了错误仓库或错误配置。
   正确做法：启动器显式把 `NOCODE_PROJECT_DIR` 绑定到当前仓库根，不继承外部残留项目根。
@@ -193,5 +195,5 @@ PYTHONPATH=src python3 -m nocode_agent.app.backend_stdio
 
 ## 开发流程
  1、开始编码前先与用户确认方案
- 2、编码完成后与用户对齐修改内容
- 2、用户觉得没问题了，提交commit
+ 2、编码完成后提交一次commit
+ 3、特性最终开发完成后在fetures编写特性文档

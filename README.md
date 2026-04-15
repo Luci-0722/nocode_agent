@@ -42,9 +42,11 @@ src/nocode_agent/
   bundled_skills/ 仓库自带 skills
 
 frontend/
-  tui.ts
-  input_protocol.ts
-  terminal_utils.ts
+  index.tsx              Ink 入口
+  App.tsx                主 REPL
+  components/            Header / Transcript / Composer / dialogs
+  hooks/                 useAppState / useBackend
+  types/                 前后端事件类型
 
 .nocode/agents/   项目级 subagent 定义
 tests/            启动与交互相关冒烟测试
@@ -93,13 +95,13 @@ cp config.example.yaml config.yaml
 4. 直接启动 TUI：
 
 ```bash
-npx tsx frontend/tui.ts
+./nocode
 ```
 
 恢复历史会话：
 
 ```bash
-npx tsx frontend/tui.ts --resume
+./nocode --resume
 ```
 
 ## 安装启动器
@@ -171,7 +173,7 @@ cp config.example.yaml ~/.nocode/config.yaml
 
 建议优先把密钥放到环境变量中，而不是直接写入配置文件。
 
-示例配置默认把 checkpoint、ACP session 和 session memory 写到项目内的 `.state/` 路径下；如果你有自己的目录约定，也可以通过配置或环境变量覆盖。
+默认情况下，checkpoint、ACP session、session memory 和日志都会写到 `~/.nocode/projects/<project-hash>/` 下；如果你有自己的目录约定，也可以通过配置或环境变量覆盖。
 
 常见环境变量：
 
@@ -245,9 +247,9 @@ PYTHONPATH=src python3 -m nocode_agent.app.backend_stdio
 
 TUI、启动器、路径解析、backend 启动相关改动，优先关注：
 
-- `frontend/tui.ts`
-- `frontend/input_protocol.ts`
-- `frontend/terminal_utils.ts`
+- `frontend/index.tsx`
+- `frontend/App.tsx`
+- `frontend/components/*`
 - `src/nocode_agent/runtime/paths.py`
 - `tests/test_startup_smoke.py`
 

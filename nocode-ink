@@ -30,7 +30,18 @@ unset NOCODE_PROJECT_DIR
 
 # 检查是否需要编译
 dist_dir="$project_dir/frontend/dist"
-if [[ ! -d "$dist_dir" ]] || [[ "$project_dir/frontend/App.tsx" -nt "$dist_dir/App.js" ]]; then
+entry_js="$dist_dir/index.js"
+needs_build=0
+if [[ ! -f "$entry_js" ]]; then
+  needs_build=1
+elif find "$project_dir/frontend" \
+  \( -path "$dist_dir" -o -path "$project_dir/frontend/node_modules" \) -prune -o \
+  \( -name '*.ts' -o -name '*.tsx' -o -name 'package.json' -o -name 'package-lock.json' -o -name 'tsconfig.json' \) \
+  -newer "$entry_js" -print -quit | grep -q .; then
+  needs_build=1
+fi
+
+if [[ "$needs_build" -eq 1 ]]; then
   echo "Compiling TUI..."
   cd "$project_dir/frontend" && npm run build
 fi

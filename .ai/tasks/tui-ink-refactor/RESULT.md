@@ -16,7 +16,7 @@ Phase 1-2 完成，Ink TUI 重构基础框架搭建成功。
 
 截至当前检查点，Ink 版已经不只是静态骨架：
 
-- `nocode-ink` 现已真正运行新的 Ink `dist/` 产物，不再误跑旧 UI
+- `nocode` / `nocode-ink` 现已真正运行新的 Ink `dist/` 产物，不再误跑旧 UI
 - 新版已打通 `resume picker -> resume_thread -> load_history -> transcript`
 - model picker / permission dialog / question dialog 的基本结构已接入
 - 主界面已具备 tool 选择、展开、消息级滚动与 slash command 基础能力
@@ -24,7 +24,7 @@ Phase 1-2 完成，Ink TUI 重构基础框架搭建成功。
 ## Commits And Artifacts
 
 - Commit: 3730da5 feat: Ink TUI 重构 Phase 1-2 完成
-- 启动脚本: nocode-ink（与旧版 nocode 并行）
+- 启动脚本: `nocode` 已切到新 Ink TUI，`nocode-ink` 仍可兼容使用
 
 ## Remaining Work
 
@@ -37,4 +37,4 @@ Phase 3: 高级功能
 Phase 4: 迁移与测试
 - 替换 nocode 入口指向新 TUI
 - 测试各终端兼容性（VSCode、PyCharm、iTerm2）
-- 删除旧 tui.ts、input_protocol.ts、terminal_utils.ts
+- 删除旧手写 TUI 残留文件与引用

@@ -10,7 +10,7 @@ Phase 3: 交互链路迁移
 2. 校准权限/提问对话框的交互细节，覆盖更多 edge cases
 3. 继续测试 slash commands、模型切换、恢复会话、工具展开等实际终端行为
 4. 评估是否需要更强的虚拟滚动/按行滚动，而不是当前消息级 viewport
-5. 清理旧的 `frontend/tui.ts` 残留引用，准备切主入口
+5. 清理旧手写 TUI 残留引用，准备切主入口
 
 ## Open Questions
 

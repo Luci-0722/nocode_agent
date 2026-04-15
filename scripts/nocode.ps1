@@ -9,11 +9,33 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
 
 # NOCODE_HOME is set during installation.
 $NocodeHome = if ($env:NOCODE_HOME) { $env:NOCODE_HOME } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
-$TuiPath = Join-Path $NocodeHome 'frontend\tui.ts'
+$FrontendDir = Join-Path $NocodeHome 'frontend'
+$DistDir = Join-Path $FrontendDir 'dist'
+$EntryPath = Join-Path $DistDir 'index.js'
 
-if (-not (Test-Path $TuiPath)) {
-    Write-Error "Cannot find frontend\tui.ts in $NocodeHome. Please reinstall or set NOCODE_HOME."
+if (-not (Test-Path $FrontendDir)) {
+    Write-Error "Cannot find frontend in $NocodeHome. Please reinstall or set NOCODE_HOME."
     exit 1
+}
+
+$NeedsBuild = -not (Test-Path $EntryPath)
+if (-not $NeedsBuild) {
+    $EntryTime = (Get-Item $EntryPath).LastWriteTimeUtc
+    $SourceFiles = Get-ChildItem $FrontendDir -Recurse -File | Where-Object {
+        $_.FullName -notlike "$DistDir*" -and
+        $_.FullName -notlike (Join-Path $FrontendDir 'node_modules*') -and
+        ($_.Extension -in '.ts', '.tsx', '.json')
+    }
+    $NeedsBuild = $SourceFiles | Where-Object { $_.LastWriteTimeUtc -gt $EntryTime } | Select-Object -First 1
+}
+
+if ($NeedsBuild) {
+    Push-Location $FrontendDir
+    try {
+        npm run build | Out-Host
+    } finally {
+        Pop-Location
+    }
 }
 
 # Prepend venv Python to PATH so backend uses the right interpreter
@@ -22,7 +44,5 @@ if (Test-Path $VenvPython) {
     $env:PATH = "$VenvPython;$env:PATH"
 }
 
-# Set project dir so backend can find config.yaml
-$env:NOCODE_PROJECT_DIR = $NocodeHome
-
-npx tsx $TuiPath @ExtraArgs
+Remove-Item Env:NOCODE_PROJECT_DIR -ErrorAction SilentlyContinue
+node $EntryPath @ExtraArgs

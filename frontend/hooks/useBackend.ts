@@ -1,5 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -15,7 +17,15 @@ import type {
 
 type HistoryTextEntry = Extract<HistoryEntry, { role: string }>;
 
-const SOURCE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const SOURCE_ROOT = (() => {
+  const configured = (process.env.NOCODE_SOURCE_ROOT || '').trim();
+  if (configured) {
+    return path.resolve(process.cwd(), expandUserPath(configured));
+  }
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+})();
+const BACKEND_STDERR_CHAR_LIMIT = 4000;
+const BACKEND_STDERR_LINE_LIMIT = 12;
 
 export interface BackendConfig {
   resume?: boolean;
@@ -35,10 +45,76 @@ function coerceRole(role?: string): 'user' | 'assistant' | 'system' {
   return 'system';
 }
 
+function expandUserPath(rawPath: string): string {
+  if (rawPath === '~') {
+    return os.homedir();
+  }
+  if (rawPath.startsWith('~/')) {
+    return path.join(os.homedir(), rawPath.slice(2));
+  }
+  return rawPath;
+}
+
+function resolveStateDir(projectDir: string): string {
+  const configured = (process.env.NOCODE_STATE_DIR || '').trim();
+  if (configured) {
+    return path.resolve(process.cwd(), expandUserPath(configured));
+  }
+
+  let resolvedProjectDir = path.resolve(projectDir);
+  try {
+    resolvedProjectDir = fs.realpathSync(projectDir);
+  } catch {
+    // Fall back to resolved path when project dir does not exist yet.
+  }
+
+  const projectId = createHash('sha256').update(resolvedProjectDir).digest('hex').slice(0, 8);
+  return path.join(os.homedir(), '.nocode', 'projects', projectId);
+}
+
+function resolveBackendLogPath(projectDir: string): string {
+  const configured = (process.env.NOCODE_LOG_FILE || '').trim();
+  if (!configured) {
+    return path.join(resolveStateDir(projectDir), 'nocode.log');
+  }
+
+  const expanded = expandUserPath(configured);
+  return path.isAbsolute(expanded) ? expanded : path.resolve(process.cwd(), expanded);
+}
+
+function getBackendStderrExcerpt(stderrTail: string): string {
+  const text = stderrTail.trim();
+  if (!text) {
+    return '';
+  }
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line.length > 0);
+  if (lines.length === 0) {
+    return '';
+  }
+  return lines.slice(-BACKEND_STDERR_LINE_LIMIT).join('\n');
+}
+
+function buildBackendFailureMessage(baseMessage: string, stderrTail: string, logPath: string): string {
+  const parts = [baseMessage];
+  const stderrExcerpt = getBackendStderrExcerpt(stderrTail);
+  if (stderrExcerpt) {
+    parts.push(`最近 stderr:\n${stderrExcerpt}`);
+  }
+  if (logPath) {
+    parts.push(`日志文件: ${logPath}`);
+  }
+  return parts.join('\n\n');
+}
+
 export function useBackend(config: BackendConfig = {}) {
   const backendRef = useRef<ChildProcessWithoutNullStreams | null>(null);
   const bufferRef = useRef('');
   const stderrTailRef = useRef('');
+  const backendLogPathRef = useRef(resolveBackendLogPath(process.cwd()));
+  const backendReportedFatalRef = useRef(false);
   const messageCounterRef = useRef(1);
   const subagentToolCounterRef = useRef(1);
 
@@ -361,9 +437,14 @@ export function useBackend(config: BackendConfig = {}) {
           finalizeStreaming();
           break;
         case 'fatal': {
-          const stderr = stderrTailRef.current.trim();
-          const suffix = stderr ? `\n\nRecent stderr:\n${stderr}` : '';
-          pushSystemMessage(`Fatal: ${event.message}${suffix}`);
+          backendReportedFatalRef.current = true;
+          pushSystemMessage(
+            buildBackendFailureMessage(
+              `fatal: ${event.message}`,
+              stderrTailRef.current,
+              backendLogPathRef.current,
+            ),
+          );
           finalizeStreaming();
           break;
         }
@@ -459,6 +540,8 @@ export function useBackend(config: BackendConfig = {}) {
   useEffect(() => {
     const baseEnv = { ...process.env };
     delete baseEnv.NOCODE_PROJECT_DIR;
+    backendLogPathRef.current = resolveBackendLogPath(process.cwd());
+    backendReportedFatalRef.current = false;
 
     const localPython =
       process.platform === 'win32'
@@ -504,15 +587,20 @@ export function useBackend(config: BackendConfig = {}) {
     });
 
     backend.stderr.on('data', (chunk: string) => {
-      stderrTailRef.current = `${stderrTailRef.current}${chunk}`.slice(-4000);
+      stderrTailRef.current = `${stderrTailRef.current}${chunk}`.slice(-BACKEND_STDERR_CHAR_LIMIT);
     });
 
     backend.on('close', (code) => {
-      if (code !== 0) {
-        const stderr = stderrTailRef.current.trim();
-        const suffix = stderr ? `\n\nRecent stderr:\n${stderr}` : '';
-        pushSystemMessage(`Backend exited with code ${code}.${suffix}`);
+      if (backendReportedFatalRef.current || code === null || code === 0) {
+        return;
       }
+      pushSystemMessage(
+        buildBackendFailureMessage(
+          `backend exited with code ${code}`,
+          stderrTailRef.current,
+          backendLogPathRef.current,
+        ),
+      );
     });
 
     return () => {

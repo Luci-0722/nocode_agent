@@ -26,8 +26,24 @@ fi
 project_dir="$(resolve_script_dir)"
 
 # 清除可能残留的 NOCODE_PROJECT_DIR，让 backend 根据 cwd 自动解析项目根。
-# 这样不同项目目录的会话会隔离到各自的 .state 目录。
-# 如果用户需要强制指定项目根，可以手动设置 NOCODE_PROJECT_DIR 环境变量。
 unset NOCODE_PROJECT_DIR
 
-exec node "$project_dir/frontend/tui.ts" "$@"
+# 检查是否需要编译
+dist_dir="$project_dir/frontend/dist"
+entry_js="$dist_dir/index.js"
+needs_build=0
+if [[ ! -f "$entry_js" ]]; then
+  needs_build=1
+elif find "$project_dir/frontend" \
+  \( -path "$dist_dir" -o -path "$project_dir/frontend/node_modules" \) -prune -o \
+  \( -name '*.ts' -o -name '*.tsx' -o -name 'package.json' -o -name 'package-lock.json' -o -name 'tsconfig.json' \) \
+  -newer "$entry_js" -print -quit | grep -q .; then
+  needs_build=1
+fi
+
+if [[ "$needs_build" -eq 1 ]]; then
+  echo "Compiling TUI..."
+  cd "$project_dir/frontend" && npm run build
+fi
+
+exec node "$project_dir/frontend/dist/index.js" "$@"

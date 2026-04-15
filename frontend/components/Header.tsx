@@ -19,17 +19,17 @@ export default function Header() {
         <Text dimColor> ink repl</Text>
       </Box>
       <Box>
-        <Text dimColor>thread </Text>
+        <Text dimColor>thread: </Text>
         <Text>{threadId ? threadId.slice(0, 8) : '-'}</Text>
-        <Text dimColor>  model </Text>
+        <Text dimColor>  model: </Text>
         <Text>{shorten(modelLabel, 34)}</Text>
-        <Text dimColor>  effort </Text>
+        <Text dimColor>  effort: </Text>
         <Text>{reasoningEffort || '-'}</Text>
       </Box>
       <Box>
-        <Text dimColor>cwd </Text>
+        <Text dimColor>cwd: </Text>
         <Text>{shorten(cwd || '-', 56)}</Text>
-        <Text dimColor>  subagent </Text>
+        <Text dimColor>  subagent: </Text>
         <Text>{shorten(subagentModel || '-', 18)}</Text>
       </Box>
     </Box>

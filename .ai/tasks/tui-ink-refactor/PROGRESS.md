@@ -10,6 +10,7 @@ Phase 3 进行中，核心链路已可启动验证
 - 修复了 `tsconfig.json` 的 `noEmit: true`，`nocode-ink` 现在会运行新的 Ink `dist/` 产物
 - `./nocode-ink --resume` 已能启动新 Ink UI，并弹出 resume picker
 - 选中历史线程后可恢复 transcript，基础会话恢复链路已打通
+- `nocode` 启动脚本已开始切换到新的 Ink 入口
 
 ## Work Log
 
