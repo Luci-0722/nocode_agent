@@ -1,37 +1,46 @@
 import React from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useStdout } from 'ink';
 import { useAppState } from '../hooks/useAppState.js';
+import { COLOR, tildePath, truncate } from '../rendering.js';
+import Ansi from './Ansi.js';
 
 export default function StatusBar() {
+  const { stdout } = useStdout();
   const {
-    generating,
-    modelPickerOpen,
+    model,
     permissionPreference,
-    permissionRequest,
     questionRequest,
+    reasoningEffort,
     threadId,
     tokensLeftPercent,
     transcriptScroll,
+    cwd,
+    modelPickerOpen,
+    permissionRequest,
+    threadPickerOpen,
   } = useAppState();
 
-  let hint = 'Enter send  Ctrl+J/K select tool  Ctrl+O expand  PgUp/PgDn scroll  Esc cancel';
-  if (modelPickerOpen) {
-    hint = 'Up/Down move  Enter select  Esc close';
+  const width = Math.max(24, (stdout.columns || 80) - 2);
+  const modelLabel = [model, reasoningEffort].filter(Boolean).join(' ') || '-';
+  const contextLine = `${COLOR.secondary}${truncate(
+    `thread ${threadId.slice(-8) || '--------'} · ${modelLabel} · ${tokensLeftPercent}% left · perm ${permissionPreference} · ${tildePath(cwd || '-')}`,
+    width,
+  )}${COLOR.reset}`;
+
+  let hint = `Enter 发送  Shift+Enter 换行  Ctrl+J/K 选择工具  Ctrl+O 展开${transcriptScroll > 0 ? `  ↑${transcriptScroll}` : ''}`;
+  if (modelPickerOpen || threadPickerOpen) {
+    hint = '↑↓ 移动  Enter 选择  Esc 关闭';
   } else if (permissionRequest) {
-    hint = 'Up/Down choose  Enter confirm';
+    hint = '↑↓ 选择  Enter 确认';
   } else if (questionRequest) {
-    hint = 'Up/Down choose  Space toggle  Enter submit';
+    hint = '↑↓ 选择  Space 切换  Enter 提交';
   }
 
   return (
-    <Box paddingX={1}>
-      <Text dimColor>
-        {threadId ? threadId.slice(0, 8) : '-'}  {tokensLeftPercent}% ctx  perm {permissionPreference}
-        {generating ? '  generating' : ''}
-        {transcriptScroll > 0 ? `  scroll ${transcriptScroll}` : ''}
-        {'  '}
-        {hint}
-      </Text>
+    <Box flexDirection="column" paddingX={1}>
+      <Text> </Text>
+      <Ansi>{contextLine}</Ansi>
+      <Ansi>{`${COLOR.secondary}${truncate(hint, width)}${COLOR.reset}`}</Ansi>
     </Box>
   );
 }

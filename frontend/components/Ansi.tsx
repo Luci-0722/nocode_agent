@@ -1,5 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
+import { stripAnsi } from '../rendering.js';
 
 interface AnsiToken {
   text: string;
@@ -85,20 +86,42 @@ function parseAnsi(text: string): AnsiToken[] {
     const params = match[0]
       .slice(2, -1)
       .split(';')
-      .filter(Boolean)
+      .filter((value) => value.length > 0)
       .map(Number);
 
     if (params.length === 0 || params.includes(0)) {
       current = { text: '' };
     } else {
       current = next;
-      for (const param of params) {
+      for (let index = 0; index < params.length; index += 1) {
+        const param = params[index];
+        if (param === undefined) {
+          continue;
+        }
         if (param === 1) current.bold = true;
         else if (param === 2) current.dimColor = true;
         else if (param === 3) current.italic = true;
         else if (param === 4) current.underline = true;
+        else if (param === 22) current.bold = undefined;
+        else if (param === 23) current.italic = undefined;
+        else if (param === 24) current.underline = undefined;
+        else if (param === 39) current.color = undefined;
+        else if (param === 49) current.backgroundColor = undefined;
         else if (FG[param]) current.color = FG[param];
         else if (BG[param]) current.backgroundColor = BG[param];
+        else if (param === 38 && params[index + 1] === 2) {
+          const red = params[index + 2] ?? 0;
+          const green = params[index + 3] ?? 0;
+          const blue = params[index + 4] ?? 0;
+          current.color = `#${red.toString(16).padStart(2, '0')}${green.toString(16).padStart(2, '0')}${blue.toString(16).padStart(2, '0')}`;
+          index += 4;
+        } else if (param === 48 && params[index + 1] === 2) {
+          const red = params[index + 2] ?? 0;
+          const green = params[index + 3] ?? 0;
+          const blue = params[index + 4] ?? 0;
+          current.backgroundColor = `#${red.toString(16).padStart(2, '0')}${green.toString(16).padStart(2, '0')}${blue.toString(16).padStart(2, '0')}`;
+          index += 4;
+        }
       }
     }
 
@@ -110,13 +133,6 @@ function parseAnsi(text: string): AnsiToken[] {
   }
   pushToken(tokens, current);
   return tokens;
-}
-
-export function stripAnsi(text: string): string {
-  return text
-    .replace(/\x1b\[[0-9;]*[mK]/g, '')
-    .replace(/[0-9]+;[0-9;]*m/g, '')
-    .replace(/\x1b/g, '');
 }
 
 interface Props {

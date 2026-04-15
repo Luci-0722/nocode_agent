@@ -63,6 +63,7 @@ export interface AppState {
   messages: Message[];
   streaming: string;
   generating: boolean;
+  generatingStartedAt: number;
   model: string;
   modelName: string;
   subagentModel: string;
@@ -111,6 +112,7 @@ export const useAppState = create<AppState>((set) => ({
   messages: [],
   streaming: '',
   generating: false,
+  generatingStartedAt: 0,
   model: '',
   modelName: '',
   subagentModel: '',
@@ -142,7 +144,11 @@ export const useAppState = create<AppState>((set) => ({
       streaming: typeof value === 'function' ? value(state.streaming) : value,
     })),
   clearStreaming: () => set({ streaming: '' }),
-  setGenerating: (value) => set({ generating: value }),
+  setGenerating: (value) =>
+    set((state) => ({
+      generating: value,
+      generatingStartedAt: value ? state.generatingStartedAt || Date.now() : 0,
+    })),
   setStatus: (payload) => set(payload),
   setTranscriptScroll: (value) =>
     set((state) => ({
@@ -199,6 +205,7 @@ export const useAppState = create<AppState>((set) => ({
       messages: [],
       streaming: '',
       generating: false,
+      generatingStartedAt: 0,
       transcriptScroll: 0,
       selectedToolId: null,
       permissionRequest: null,

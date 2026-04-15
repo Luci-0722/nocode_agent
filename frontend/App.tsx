@@ -28,6 +28,10 @@ function makeSystemMessage(content: string) {
   };
 }
 
+function isPrintableInput(input: string, key: { ctrl?: boolean; meta?: boolean }): boolean {
+  return Boolean(input) && !key.ctrl && !key.meta && !/[\u0000-\u001f\u007f]/.test(input);
+}
+
 export default function App({ resume = false, model }: Props) {
   const { exit } = useApp();
   const { stdin } = useStdin();
@@ -370,7 +374,7 @@ export default function App({ resume = false, model }: Props) {
         }));
         return;
       }
-      if (keyInput && !key.ctrl && !key.meta && keyInput.length === 1 && keyInput.charCodeAt(0) >= 32) {
+      if (isPrintableInput(keyInput, key)) {
         updateQuestionRequest((request) => ({
           ...request,
           textAnswer: request.textAnswer + keyInput,

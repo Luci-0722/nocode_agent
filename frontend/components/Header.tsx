@@ -1,37 +1,31 @@
 import React from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useStdout } from 'ink';
 import { useAppState } from '../hooks/useAppState.js';
+import { COLOR, tildePath, truncate, visibleLength } from '../rendering.js';
+import Ansi from './Ansi.js';
 
-function shorten(text: string, max: number): string {
-  return text.length > max ? `...${text.slice(-(max - 3))}` : text;
-}
+const LOGO = ['█▄  █  ▄██▄', '█ ▀ █  █  █', '▀   ▀  ▀██▀'];
 
 export default function Header() {
-  const { cwd, model, modelName, reasoningEffort, subagentModel, threadId } = useAppState();
-  const modelLabel = modelName ? `${modelName} (${model})` : model || '-';
+  const { stdout } = useStdout();
+  const { cwd, model, modelName, reasoningEffort, threadId } = useAppState();
+  const width = Math.max(40, (stdout.columns || 80) - 2);
+  const logoWidth = visibleLength(LOGO[0] || '');
+  const rightWidth = Math.max(12, width - logoWidth - 2);
+  const modelDisplay = modelName ? `${modelName} (${model})` : model;
+
+  const lines = [
+    `${COLOR.accent}${COLOR.bold}${LOGO[0]}${COLOR.reset}  ${COLOR.secondary}${truncate(`thread: ${threadId.slice(-8) || '--------'}`, rightWidth)}${COLOR.reset}`,
+    `${COLOR.accent}${COLOR.bold}${LOGO[1]}${COLOR.reset}  ${COLOR.secondary}${truncate(`model: ${[modelDisplay, reasoningEffort].filter(Boolean).join(' ') || '-'}`, rightWidth)}${COLOR.reset}`,
+    `${COLOR.accent}${COLOR.bold}${LOGO[2]}${COLOR.reset}  ${COLOR.secondary}${truncate(`cwd: ${tildePath(cwd || '-')}`, rightWidth)}${COLOR.reset}`,
+  ];
 
   return (
     <Box flexDirection="column" paddingX={1} marginBottom={1}>
-      <Box>
-        <Text color="cyan" bold>
-          NoCode
-        </Text>
-        <Text dimColor> ink repl</Text>
-      </Box>
-      <Box>
-        <Text dimColor>thread: </Text>
-        <Text>{threadId ? threadId.slice(0, 8) : '-'}</Text>
-        <Text dimColor>  model: </Text>
-        <Text>{shorten(modelLabel, 34)}</Text>
-        <Text dimColor>  effort: </Text>
-        <Text>{reasoningEffort || '-'}</Text>
-      </Box>
-      <Box>
-        <Text dimColor>cwd: </Text>
-        <Text>{shorten(cwd || '-', 56)}</Text>
-        <Text dimColor>  subagent: </Text>
-        <Text>{shorten(subagentModel || '-', 18)}</Text>
-      </Box>
+      {lines.map((line, index) => (
+        <Ansi key={index}>{line}</Ansi>
+      ))}
+      <Text> </Text>
     </Box>
   );
 }
