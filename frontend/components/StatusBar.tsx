@@ -14,7 +14,7 @@ export default function StatusBar() {
     transcriptScroll,
   } = useAppState();
 
-  let hint = 'Enter send  Ctrl+J/K select tool  Ctrl+O expand  PgUp/PgDn scroll';
+  let hint = 'Enter send  Ctrl+J/K select tool  Ctrl+O expand  PgUp/PgDn scroll  Esc cancel';
   if (modelPickerOpen) {
     hint = 'Up/Down move  Enter select  Esc close';
   } else if (permissionRequest) {

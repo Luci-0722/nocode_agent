@@ -93,7 +93,7 @@ export default function Composer({ value, onChange, onSubmit, disabled = false }
         </Box>
       </Box>
       <Text dimColor>
-        {disabled ? 'Input paused while dialog is open or generation is running.' : 'Slash commands: /help /models /resume /permission ask|all'}
+        {disabled ? 'Input paused while dialog is open or generation is running.' : 'Slash commands: /help /models [/name] /resume /permission ask|all /cancel'}
       </Text>
     </Box>
   );

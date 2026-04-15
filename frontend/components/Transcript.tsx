@@ -25,7 +25,19 @@ export default function Transcript() {
   const visibleCount = Math.max(4, (stdout.rows || 24) - 10);
   const maxOffset = Math.max(0, items.length - visibleCount);
   const clampedOffset = Math.max(0, Math.min(maxOffset, transcriptScroll));
-  const start = Math.max(0, items.length - visibleCount - clampedOffset);
+  const selectedIndex = selectedToolId
+    ? items.findIndex((message) => message.kind === 'tool' && message.id === selectedToolId)
+    : -1;
+
+  let start = Math.max(0, items.length - visibleCount - clampedOffset);
+  if (selectedIndex >= 0) {
+    const end = start + visibleCount;
+    if (selectedIndex < start) {
+      start = selectedIndex;
+    } else if (selectedIndex >= end) {
+      start = Math.max(0, selectedIndex - visibleCount + 1);
+    }
+  }
   const visible = items.slice(start, start + visibleCount);
 
   return (

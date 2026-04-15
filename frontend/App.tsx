@@ -97,9 +97,12 @@ export default function App({ resume = false, model }: Props) {
         '/help',
         '/clear',
         '/session',
+        '/status',
         '/resume',
         '/models',
+        '/models <name>',
         '/permission ask|all',
+        '/cancel',
         '/quit',
       ].join('\n'),
     );
@@ -123,6 +126,7 @@ export default function App({ resume = false, model }: Props) {
         setInput('');
         return true;
       case 'session':
+      case 'status':
         backend.requestStatus();
         return true;
       case 'resume':
@@ -130,7 +134,14 @@ export default function App({ resume = false, model }: Props) {
         backend.listThreads();
         return true;
       case 'models':
-        backend.listModels();
+        if (arg) {
+          backend.switchModel(arg);
+        } else {
+          backend.listModels();
+        }
+        return true;
+      case 'cancel':
+        backend.cancel();
         return true;
       case 'permission':
       case 'perm':
@@ -225,15 +236,6 @@ export default function App({ resume = false, model }: Props) {
     }
     advanceQuestion(request, answer.join(', '));
   };
-
-  if (!stdin.isTTY) {
-    return (
-      <Box flexDirection="column">
-        <Text color="red">Error: this program must run in a TTY.</Text>
-        <Text>Run with: ./nocode-ink</Text>
-      </Box>
-    );
-  }
 
   useInput((keyInput, key) => {
     if (key.ctrl && keyInput === 'c') {
@@ -400,7 +402,16 @@ export default function App({ resume = false, model }: Props) {
     if (key.escape && generating) {
       backend.cancel();
     }
-  });
+  }, { isActive: stdin.isTTY });
+
+  if (!stdin.isTTY) {
+    return (
+      <Box flexDirection="column">
+        <Text color="red">Error: this program must run in a TTY.</Text>
+        <Text>Run with: ./nocode-ink</Text>
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column" height="100%">

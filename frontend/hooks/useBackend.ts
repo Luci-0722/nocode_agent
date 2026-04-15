@@ -128,6 +128,7 @@ export function useBackend(config: BackendConfig = {}) {
   const setSelectedToolId = useAppState((state) => state.setSelectedToolId);
   const setStatus = useAppState((state) => state.setStatus);
   const setStreaming = useAppState((state) => state.setStreaming);
+  const setTranscriptScroll = useAppState((state) => state.setTranscriptScroll);
   const openModelPicker = useAppState((state) => state.openModelPicker);
   const openThreadPicker = useAppState((state) => state.openThreadPicker);
   const resetConversation = useAppState((state) => state.resetConversation);
@@ -255,10 +256,11 @@ export function useBackend(config: BackendConfig = {}) {
 
       setMessages(messages);
       setSelectedToolId(null);
+      setTranscriptScroll(0);
       clearStreaming();
       setGenerating(false);
     },
-    [clearStreaming, setGenerating, setMessages, setSelectedToolId],
+    [clearStreaming, setGenerating, setMessages, setSelectedToolId, setTranscriptScroll],
   );
 
   const handleEvent = useCallback(
@@ -283,6 +285,7 @@ export function useBackend(config: BackendConfig = {}) {
           setStatus({ threadId: event.thread_id });
           break;
         case 'text':
+          setTranscriptScroll((value) => (value === 0 ? 0 : value));
           setStreaming((previous) => previous + event.delta);
           break;
         case 'retry':
@@ -301,6 +304,7 @@ export function useBackend(config: BackendConfig = {}) {
           };
           addMessage(tool);
           setSelectedToolId(tool.id);
+          setTranscriptScroll(0);
           break;
         }
         case 'tool_end':
@@ -477,6 +481,7 @@ export function useBackend(config: BackendConfig = {}) {
             state: 'queued',
             timestamp: Date.now(),
           } satisfies TextMessage);
+          setTranscriptScroll(0);
           break;
         case 'queued_prompt_injected':
           useAppState.setState((state) => {
@@ -629,9 +634,10 @@ export function useBackend(config: BackendConfig = {}) {
         timestamp: Date.now(),
       });
       setGenerating(true);
+      setTranscriptScroll(0);
       send({ type: 'prompt', text: trimmed });
     },
-    [addMessage, send, setGenerating],
+    [addMessage, send, setGenerating, setTranscriptScroll],
   );
 
   const sendQuestionAnswer = useCallback(

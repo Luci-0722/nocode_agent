@@ -44,4 +44,7 @@ Phase 3 进行中，核心链路已可启动验证
 - ✅ 新增 `DialogFrame`、`ModelPicker`、`ThreadPicker`、`PermissionDialog`、`QuestionDialog`
 - ✅ `App` 改成 Claude Code 风格的主 REPL + 独立 dialog 结构
 - ✅ 修复构建链路：`dist/` 不再是旧产物
-- ⏳ 还需继续打磨 tool details、滚动体验和更多终端交互细节
+- ✅ 工具卡片已改成结构化摘要 + 可展开详情，不再只直出原始 JSON
+- ✅ 选中的 tool 会尽量保持在 transcript 可视区域内
+- ✅ 补充 `/status`、`/cancel`、`/models <name>` 这类直接命令
+- ⏳ 还需继续打磨滚动体验和更多终端交互细节
