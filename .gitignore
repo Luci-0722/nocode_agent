@@ -6,3 +6,11 @@ __pycache__/
 .DS_Store
 config.yaml
 *.egg-info/
+
+# Node.js
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# AI task workspaces (optional)
+# .ai/tasks/

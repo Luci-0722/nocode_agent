@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+resolve_script_dir() {
+  local source_path="${BASH_SOURCE[0]}"
+
+  # 支持通过 symlink 调用，持续解析到真实脚本位置。
+  while [[ -L "$source_path" ]]; do
+    local source_dir
+    source_dir="$(cd -P "$(dirname "$source_path")" && pwd)"
+    source_path="$(readlink "$source_path")"
+    if [[ "$source_path" != /* ]]; then
+      source_path="$source_dir/$source_path"
+    fi
+  done
+
+  cd -P "$(dirname "$source_path")" && pwd
+}
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "未找到 node，请先安装 Node.js。" >&2
+  exit 1
+fi
+
+project_dir="$(resolve_script_dir)"
+
+# 清除可能残留的 NOCODE_PROJECT_DIR，让 backend 根据 cwd 自动解析项目根。
+unset NOCODE_PROJECT_DIR
+
+# 检查是否需要编译
+dist_dir="$project_dir/frontend/dist"
+if [[ ! -d "$dist_dir" ]] || [[ "$project_dir/frontend/App.tsx" -nt "$dist_dir/App.js" ]]; then
+  echo "Compiling TUI..."
+  cd "$project_dir/frontend" && npm run build
+fi
+
+exec node "$project_dir/frontend/dist/index.js" "$@"
