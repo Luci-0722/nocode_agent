@@ -2,13 +2,14 @@
 
 ## Current Status
 
-Phase 2 完成，准备测试
+Phase 3 进行中，核心链路已可启动验证
 
 ## Latest Verification
 
 - TypeScript 编译成功
-- 新代码量：1036 行（vs 原来 4500+ 行）
-- 基础组件已实现：Header、Transcript、Message、Composer、StatusBar、Ansi
+- 修复了 `tsconfig.json` 的 `noEmit: true`，`nocode-ink` 现在会运行新的 Ink `dist/` 产物
+- `./nocode-ink --resume` 已能启动新 Ink UI，并弹出 resume picker
+- 选中历史线程后可恢复 transcript，基础会话恢复链路已打通
 
 ## Work Log
 
@@ -35,3 +36,11 @@ Phase 2 完成，准备测试
 - 验证后端通信、输入、流式输出
 - 测试历史记录功能
 - 测试 ANSI 渲染
+
+**Phase 3: 交互链路迁移**
+- ✅ 重写 `useAppState`，把消息、overlay、model/thread picker、permission/question 状态收敛到单一 store
+- ✅ 重写 `useBackend`，补齐 `model_list`、`thread_list`、`history`、`permission_request`、`question`、`token_usage` 等事件映射
+- ✅ 新增 `DialogFrame`、`ModelPicker`、`ThreadPicker`、`PermissionDialog`、`QuestionDialog`
+- ✅ `App` 改成 Claude Code 风格的主 REPL + 独立 dialog 结构
+- ✅ 修复构建链路：`dist/` 不再是旧产物
+- ⏳ 还需继续打磨 tool details、滚动体验和更多终端交互细节
