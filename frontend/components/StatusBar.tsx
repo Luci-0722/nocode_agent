@@ -18,6 +18,7 @@ export default function StatusBar() {
     modelPickerOpen,
     permissionRequest,
     threadPickerOpen,
+    generating,
   } = useAppState();
 
   const width = Math.max(24, (stdout.columns || 80) - 2);
@@ -34,6 +35,8 @@ export default function StatusBar() {
     hint = '↑↓ 选择  Enter 确认';
   } else if (questionRequest) {
     hint = '↑↓ 选择  Space 切换  Enter 提交';
+  } else if (!generating) {
+    hint = `Enter 发送  Shift+Enter 换行  输入 / 打开命令  ↑↓ 选命令  Tab 补全${transcriptScroll > 0 ? `  ↑${transcriptScroll}` : ''}`;
   }
 
   return (

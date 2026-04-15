@@ -10,6 +10,7 @@ import ThreadPicker from './components/ThreadPicker.js';
 import Transcript from './components/Transcript.js';
 import { useAppState } from './hooks/useAppState.js';
 import { useBackend } from './hooks/useBackend.js';
+import { buildSlashCommandHelpText } from './slashCommands.js';
 import type { ModelOption, PermissionRequestState, QuestionRequestState } from './hooks/useAppState.js';
 import type { ThreadInfo } from './types/events.js';
 
@@ -95,21 +96,7 @@ export default function App({ resume = false, model }: Props) {
   };
 
   const handleHelp = () => {
-    appendLocalSystem(
-      [
-        'Commands:',
-        '/help',
-        '/clear',
-        '/session',
-        '/status',
-        '/resume',
-        '/models',
-        '/models <name>',
-        '/permission ask|all',
-        '/cancel',
-        '/quit',
-      ].join('\n'),
-    );
+    appendLocalSystem(buildSlashCommandHelpText());
   };
 
   const handleSlashCommand = (raw: string): boolean => {

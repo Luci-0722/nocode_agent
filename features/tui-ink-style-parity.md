@@ -13,6 +13,7 @@
 - 将工具调用从卡片式面板改回紧凑的行式显示
 - 为 assistant 消息恢复 Markdown 渲染
 - 修复中文输入法一次提交多个汉字时被拆成单字符的问题
+- 恢复 `/` 命令候选菜单、方向键选择、Tab 补全与 Enter 执行
 
 ## 设计说明
 
@@ -77,6 +78,26 @@
 
 将“只接受单字符输入”的逻辑改为“接受任意非控制字符输入”，从而兼容中文输入法一次 commit 多个汉字。
 
+### 5. Slash Command 菜单恢复
+
+新增：
+
+- `frontend/slashCommands.ts`
+
+调整：
+
+- `frontend/components/Composer.tsx`
+- `frontend/components/StatusBar.tsx`
+- `frontend/App.tsx`
+
+恢复内容包括：
+
+- 输入 `/` 自动弹出命令候选
+- `↑/↓` 选择候选
+- `Tab` 补全当前命令
+- `Enter` 在未精确匹配时先补全，在精确匹配时直接执行
+- 命令帮助文案与候选来源统一复用共享定义
+
 ## 测试
 
 已验证：
@@ -97,6 +118,8 @@ python3 -m unittest \
 - 底部分隔线
 - 输入区 `❯`
 - context status line
+- `/` 输入后即时弹出的命令候选菜单
+- `Tab` 补全 `/help`，`Enter` 正常执行
 
 ## 后续手工回归建议
 
@@ -106,3 +129,4 @@ python3 -m unittest \
 - assistant 输出带标题、列表、代码块、表格的 Markdown
 - 生成中 spinner / elapsed time 是否持续刷新
 - 工具调用选中、展开、折叠
+- slash command 菜单在 `/m`、`/per`、`/res` 等前缀下的筛选和补全行为
