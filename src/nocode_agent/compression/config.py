@@ -153,9 +153,16 @@ class SessionMemoryConfig:
 def build_session_memory_config(
     raw: dict | None,
 ) -> SessionMemoryConfig | None:
-    """从 config.yaml 的 session_memory 段构建配置。返回 None 表示未启用。"""
+    """从 config.yaml 的 session_memory 段构建配置。返回 None 表示未启用。
+
+    旧的 `.state/` 相对路径配置已废弃，自动使用默认路径。
+    """
     if not raw or not raw.get("enabled", True):
         return None
+    configured_path = raw.get("storage_path", "")
+    # 废弃旧的 .state/ 相对路径配置
+    if configured_path and str(configured_path).strip().startswith(".state/"):
+        configured_path = ""
     return SessionMemoryConfig(
         enabled=raw.get("enabled", True),
         min_tokens_to_init=raw.get("min_tokens_to_init", 10_000),
@@ -163,7 +170,7 @@ def build_session_memory_config(
         min_tool_calls_between_updates=raw.get("min_tool_calls_between_updates", 3),
         max_total_tokens=raw.get("max_total_tokens", 12_000),
         storage_path=str(
-            resolve_runtime_path(raw.get("storage_path", str(default_session_memory_path())))
+            resolve_runtime_path(configured_path or str(default_session_memory_path()))
         ),
     )
 

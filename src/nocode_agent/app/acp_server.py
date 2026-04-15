@@ -52,8 +52,15 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_acp_sessions_path(config: dict[str, Any]) -> str:
-    configured = str(config.get("acp_sessions_path") or default_acp_sessions_path())
-    return str(resolve_runtime_path(configured))
+    """解析 ACP sessions 存储路径。
+
+    旧的 `.state/` 相对路径配置已废弃，自动使用默认路径。
+    """
+    configured = str(config.get("acp_sessions_path") or "").strip()
+    # 废弃旧的 .state/ 相对路径配置
+    if configured and not configured.startswith(".state/"):
+        return str(resolve_runtime_path(configured))
+    return str(default_acp_sessions_path())
 
 
 def _dump_mcp_servers(mcp_servers: list[Any] | None) -> list[dict[str, Any]]:

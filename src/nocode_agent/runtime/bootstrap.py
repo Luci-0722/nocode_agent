@@ -15,6 +15,8 @@ from nocode_agent.config import (
     resolve_no_proxy,
     resolve_proxy,
     resolve_request_timeout,
+    list_available_models,
+    resolve_model_config,
 )
 from nocode_agent.log import setup_logging
 
@@ -67,13 +69,23 @@ def build_mainagent_kwargs(
     api_key: str | None = None,
     thread_id: str | None = None,
     mcp_servers: list[Any] | None = None,
+    model_name: str | None = None,
 ) -> dict[str, Any]:
-    """把运行时配置转换成 ``create_mainagent`` 参数。"""
-    resolved_api_key = api_key or require_api_key(config)
+    """把运行时配置转换成 ``create_mainagent`` 参数。
+
+    Args:
+        config: 完整配置字典
+        api_key: 显式指定的 API Key（可选）
+        thread_id: 会话线程 ID（可选）
+        mcp_servers: MCP 服务器列表（可选）
+        model_name: 模型名称（对应 models 段的 key，可选）
+    """
+    model_cfg = resolve_model_config(config, model_name)
+    resolved_api_key = api_key or resolve_api_key(model_cfg) or require_api_key(config)
     return {
         "api_key": resolved_api_key,
-        "model": config.get("model", _DEFAULT_MODEL),
-        "base_url": config.get("base_url", _DEFAULT_BASE_URL),
+        "model": model_cfg.get("model", _DEFAULT_MODEL),
+        "base_url": model_cfg.get("base_url", _DEFAULT_BASE_URL),
         "max_tokens": config.get("max_tokens", _DEFAULT_MAX_TOKENS),
         "temperature": config.get("temperature", _DEFAULT_TEMPERATURE),
         "compression": config.get("compression"),
@@ -96,12 +108,21 @@ async def create_agent_from_config(
     *,
     thread_id: str | None = None,
     mcp_servers: list[Any] | None = None,
+    model_name: str | None = None,
 ) -> MainAgent:
-    """基于配置创建 MainAgent。"""
+    """基于配置创建 MainAgent。
+
+    Args:
+        config: 完整配置字典
+        thread_id: 会话线程 ID（可选）
+        mcp_servers: MCP 服务器列表（可选）
+        model_name: 模型名称（对应 models 段的 key，可选）
+    """
     return await create_mainagent(
         **build_mainagent_kwargs(
             config,
             thread_id=thread_id,
             mcp_servers=mcp_servers,
+            model_name=model_name,
         )
     )

@@ -235,9 +235,16 @@ class CheckpointerManager:
 
 
 def resolve_checkpoint_path(config: dict[str, Any] | None = None) -> str:
+    """解析 checkpoint 数据库路径。
+
+    旧的 `.state/` 相对路径配置已废弃，自动使用默认路径。
+    """
     resolved = ""
     if config:
-        resolved = str(config.get("checkpoint_db_path", "") or "")
+        configured = str(config.get("checkpoint_db_path", "") or "").strip()
+        # 废弃旧的 .state/ 相对路径配置
+        if configured and not configured.startswith(".state/"):
+            resolved = configured
     if not resolved:
         resolved = str(default_checkpoint_db_path())
     return str(resolve_runtime_path(resolved))

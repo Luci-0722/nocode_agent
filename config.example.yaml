@@ -1,7 +1,24 @@
-# GLM 默认配置
-model: glm-5.1
-base_url: "https://open.bigmodel.cn/api/coding/paas/v4"
-api_key: "YOUR_API_KEY_HERE"
+# ── 模型配置 ─────────────────────────────────────────────────────
+# 支持配置多个模型，通过 /models 命令切换
+models:
+  glm:
+    model: glm-5.1
+    base_url: "https://open.bigmodel.cn/api/coding/paas/v4"
+    # api_key 省略则从 ZHIPU_API_KEY 环境变量读取
+  qwen:
+    model: qwen3-coder-plus
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    # api_key 省略则从 DASHSCOPE_API_KEY 环境变量读取
+  claude:
+    model: claude-sonnet-4
+    base_url: "https://api.anthropic.com"
+    # api_key 省略则从 ANTHROPIC_API_KEY 环境变量读取
+  ollama:
+    model: qwen2.5-coder:14b
+    base_url: "http://127.0.0.1:11434/v1"
+
+# 默认使用的模型（对应 models 中的 key）
+default_model: glm
 
 ## 阿里百炼（OpenAI 兼容模式）
 # model: qwen3-coder-plus
@@ -57,9 +74,9 @@ temperature: 0.7
 subagent_model: glm-5.1
 # subagent_model: qwen2.5-coder:14b
 subagent_temperature: 0.7
-
-checkpoint_db_path: ".state/langgraph-checkpoints.sqlite"
-acp_sessions_path: ".state/acp-sessions.json"
+# checkpoint / ACP sessions / session memory 默认写入
+# ~/.nocode/projects/<project-hash>/ 下的固定状态目录。
+# 如需覆盖，可显式设置绝对路径，或使用 NOCODE_STATE_DIR。
 
 compression:
   # ── Layer 1: 微压缩 ─────────────────────────────
@@ -106,7 +123,6 @@ session_memory:
   min_tokens_between_updates: 5000
   min_tool_calls_between_updates: 3
   max_total_tokens: 12000
-  storage_path: ".state/session-memory"
 
 permissions:
   # ── Human-in-the-loop 工具审批 ─────────────────
@@ -125,3 +141,27 @@ permissions:
       allowed_decisions: [approve, reject]
     delegate_code:
       allowed_decisions: [approve, reject]
+
+security:
+  # ── 安全防护 ───────────────────────────────────
+  # deny_paths: 禁止访问的敏感目录列表
+  # 这些路径即使在工作区内也无法被 read/write/edit 访问
+  # 默认已包含: ~/.ssh, ~/.gnupg, ~/.aws, ~/.netrc, ~/.config/gh, ~/.docker
+  # 可追加自定义敏感路径：
+  # deny_paths:
+  #   - ~/private-keys
+  #   - /etc/shadow
+
+  # sandbox: 系统级沙箱隔离（实验性功能）
+  # 启用后，bash 命令在沙箱内执行，限制文件系统和网络访问
+  # macOS 使用 sandbox-exec (Seatbelt)，Linux 使用 bwrap (bubblewrap)
+  # sandbox:
+  #   enabled: false
+  #   allow_read:
+  #     - /usr
+  #     - /lib
+  #   allow_write:
+  #     - .  # 工作区
+  #   allow_network:
+  #     - api.anthropic.com
+  #     - pypi.org

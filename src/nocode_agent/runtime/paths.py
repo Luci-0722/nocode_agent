@@ -105,18 +105,6 @@ def resolve_runtime_path(path_value: str | os.PathLike[str]) -> Path:
     return (runtime_root() / candidate).resolve()
 
 
-def legacy_state_dir() -> Path:
-    """返回历史状态目录。"""
-    return package_dir() / ".state"
-
-
-def _prefer_existing_path(new_path: Path, legacy_path: Path) -> Path:
-    """优先使用新路径；若仅存在历史文件，则回落到历史路径。"""
-    if new_path.exists() or not legacy_path.exists():
-        return new_path
-    return legacy_path
-
-
 def default_log_path() -> Path:
     """返回日志文件默认路径。"""
     return state_dir() / "nocode.log"
@@ -124,23 +112,14 @@ def default_log_path() -> Path:
 
 def default_checkpoint_db_path() -> Path:
     """返回 checkpoint 数据库默认路径。"""
-    return _prefer_existing_path(
-        state_dir() / "langgraph-checkpoints.sqlite",
-        legacy_state_dir() / "langgraph-checkpoints.sqlite",
-    )
+    return state_dir() / "langgraph-checkpoints.sqlite"
 
 
 def default_acp_sessions_path() -> Path:
     """返回 ACP 会话索引默认路径。"""
-    return _prefer_existing_path(
-        state_dir() / "acp-sessions.json",
-        legacy_state_dir() / "acp-sessions.json",
-    )
+    return state_dir() / "acp-sessions.json"
 
 
 def default_session_memory_path() -> Path:
     """返回 Session Memory 默认存储目录。"""
-    return _prefer_existing_path(
-        state_dir() / "session-memory",
-        legacy_state_dir() / "session-memory",
-    )
+    return state_dir() / "session-memory"
