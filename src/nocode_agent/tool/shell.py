@@ -17,12 +17,27 @@ class BashInput(BaseModel):
 async def bash(command: str, timeout: int = 30) -> str:
     """在当前工作区执行 shell 命令并返回输出。"""
     from nocode_agent.tool.kit import _trim_output, _workspace_root, logger
+    from nocode_agent.runtime.sandbox import SandboxManager, init_sandbox
 
     logger.info("bash: %s (timeout=%ds)", command[:200], timeout)
+
+    # 初始化沙箱（首次调用时从配置加载）
+    if not hasattr(bash, "_sandbox_initialized"):
+        init_sandbox()
+        bash._sandbox_initialized = True
+
+    root = _workspace_root()
+
+    # 第三层：沙箱包装（如果启用）
+    wrapped_command = SandboxManager.wrap_command(command, root)
+
+    if wrapped_command != command:
+        logger.debug("命令已包装在沙箱中执行")
+
     try:
         proc = await asyncio.create_subprocess_shell(
-            command,
-            cwd=str(_workspace_root()),
+            wrapped_command,
+            cwd=str(root),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
