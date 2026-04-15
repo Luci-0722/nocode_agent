@@ -303,7 +303,6 @@ export function useBackend(config: BackendConfig = {}) {
             timestamp: Date.now(),
           };
           addMessage(tool);
-          setSelectedToolId(tool.id);
           setTranscriptScroll(0);
           break;
         }

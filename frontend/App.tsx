@@ -121,7 +121,6 @@ export default function App({ resume = false, model }: Props) {
         backend.requestStatus();
         return true;
       case 'resume':
-      case 'continue':
         backend.listThreads();
         return true;
       case 'models':

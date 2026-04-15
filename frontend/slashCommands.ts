@@ -32,13 +32,6 @@ export const SLASH_COMMANDS: SlashCommandDefinition[] = [
     acceptsArgs: true,
   },
   {
-    action: 'resume',
-    name: 'continue',
-    description: '恢复历史会话（/resume 别名）',
-    argumentHint: '[thread-id|关键词]',
-    acceptsArgs: true,
-  },
-  {
     action: 'models',
     name: 'models',
     description: '列出或切换模型配置',
