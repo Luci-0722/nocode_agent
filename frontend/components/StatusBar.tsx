@@ -28,7 +28,7 @@ export default function StatusBar() {
     width,
   )}${COLOR.reset}`;
 
-  let hint = `Enter 发送  Shift+Enter 换行  Ctrl+J/K 选择工具  Ctrl+O 展开${transcriptScroll > 0 ? `  ↑${transcriptScroll}` : ''}`;
+  let hint = `Enter 发送  Shift+Enter 换行  Ctrl+N/P 选择工具  Ctrl+O 展开${transcriptScroll > 0 ? `  ↑${transcriptScroll}` : ''}`;
   if (modelPickerOpen || threadPickerOpen) {
     hint = '↑↓ 移动  Enter 选择  Esc 关闭';
   } else if (permissionRequest) {
@@ -36,7 +36,7 @@ export default function StatusBar() {
   } else if (questionRequest) {
     hint = '↑↓ 选择  Space 切换  Enter 提交';
   } else if (!generating) {
-    hint = `Enter 发送  Shift+Enter 换行  输入 / 打开命令  ↑↓ 选命令  Tab 补全${transcriptScroll > 0 ? `  ↑${transcriptScroll}` : ''}`;
+    hint = `Enter 发送  Shift+Enter 换行  输入 / 打开命令  ↑↓ 选命令  Tab 补全  Ctrl+N/P 选工具${transcriptScroll > 0 ? `  ↑${transcriptScroll}` : ''}`;
   }
 
   return (

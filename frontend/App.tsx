@@ -369,11 +369,11 @@ export default function App({ resume = false, model }: Props) {
       return;
     }
 
-    if (key.ctrl && keyInput === 'j') {
+    if ((key.ctrl && keyInput === 'j') || (key.ctrl && keyInput === 'n')) {
       cycleToolSelection(1);
       return;
     }
-    if (key.ctrl && keyInput === 'k') {
+    if ((key.ctrl && keyInput === 'k') || (key.ctrl && keyInput === 'p')) {
       cycleToolSelection(-1);
       return;
     }
