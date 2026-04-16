@@ -10,7 +10,7 @@
 
 默认配置查找改为：
 
-1. 显式环境变量 `NOCODE_AGENT_CONFIG` / `NOCODE_CONFIG` / `BF_CONFIG`
+1. 显式环境变量 `NOCODE_AGENT_CONFIG` / `NOCODE_CONFIG`
 2. 项目目录下的 `.nocode/config.yaml`
 3. 全局配置 `~/.nocode/config.yaml`
 

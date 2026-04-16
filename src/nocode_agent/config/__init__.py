@@ -75,7 +75,6 @@ def load_config(config_path: str | None = None) -> dict[str, Any]:
         config_path
         or os.environ.get("NOCODE_AGENT_CONFIG")
         or os.environ.get("NOCODE_CONFIG")
-        or os.environ.get("BF_CONFIG")
         or str(_resolve_default_config_path())
     )
     config_file = Path(resolved).expanduser()

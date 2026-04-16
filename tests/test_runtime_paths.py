@@ -125,6 +125,29 @@ class RuntimePathsTest(unittest.TestCase):
                 with patch("pathlib.Path.cwd", return_value=cwd):
                     self.assertEqual(load_config().get("default_model"), "global")
 
+    def test_load_config_ignores_removed_bf_config_env(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            user_home = temp_root / "home"
+            project_root = temp_root / "project"
+            cwd = project_root / "app"
+            removed_config = temp_root / "removed-bf-config.yaml"
+            project_config = project_root / ".nocode" / "config.yaml"
+
+            user_home.mkdir()
+            cwd.mkdir(parents=True)
+            removed_config.write_text("default_model: removed\n", encoding="utf-8")
+            project_config.parent.mkdir(parents=True)
+            project_config.write_text("default_model: project\n", encoding="utf-8")
+
+            with patch.dict(
+                os.environ,
+                {"HOME": str(user_home), "BF_CONFIG": str(removed_config)},
+                clear=False,
+            ):
+                with patch("pathlib.Path.cwd", return_value=cwd):
+                    self.assertEqual(load_config().get("default_model"), "project")
+
 
 if __name__ == "__main__":
     unittest.main()

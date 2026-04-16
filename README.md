@@ -147,7 +147,7 @@ nocode
 
 配置文件按以下优先级查找：
 
-1. 环境变量 `NOCODE_AGENT_CONFIG` / `NOCODE_CONFIG` / `BF_CONFIG` 指定的路径
+1. 环境变量 `NOCODE_AGENT_CONFIG` / `NOCODE_CONFIG` 指定的路径
 2. 项目目录下的 `.nocode/config.yaml`
 3. 全局配置 `~/.nocode/config.yaml`
 
