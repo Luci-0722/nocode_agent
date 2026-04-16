@@ -5,6 +5,7 @@ __pycache__/
 .idea/
 .DS_Store
 config.yaml
+.nocode/config.yaml
 *.egg-info/
 
 # Node.js

@@ -83,10 +83,11 @@ pip install -e .
 2. 准备配置文件：
 
 ```bash
-cp config.example.yaml config.yaml
+mkdir -p .nocode
+cp config.example.yaml .nocode/config.yaml
 ```
 
-3. 修改 `config.yaml`，至少填好模型相关配置：
+3. 修改 `.nocode/config.yaml`，至少填好模型相关配置：
 
 - `model`
 - `base_url`
@@ -147,8 +148,10 @@ nocode
 配置文件按以下优先级查找：
 
 1. 环境变量 `NOCODE_AGENT_CONFIG` / `NOCODE_CONFIG` / `BF_CONFIG` 指定的路径
-2. 项目目录下的 `config.yaml`
+2. 项目目录下的 `.nocode/config.yaml`
 3. 全局配置 `~/.nocode/config.yaml`
+
+根目录 `config.yaml` 不再参与默认查找，避免误读当前业务项目自己的配置文件。
 
 安装启动器后，建议将配置放到全局位置，这样在任意目录启动都能生效：
 

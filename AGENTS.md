@@ -31,6 +31,7 @@
 - 终端界面入口在 `frontend/index.tsx`
 - 启动脚本是根目录 `nocode`
 - 默认配置模板是 `config.example.yaml`
+- 项目级配置默认读取 `<project>/.nocode/config.yaml`，全局兜底 `~/.nocode/config.yaml`
 - 运行时状态默认写入 `~/.nocode/projects/<project-hash>/`
 - subagent 统一从项目 `.nocode/agents/` 和用户 `~/.nocode/agents/` 发现；仓库默认 agent 也已经迁到项目 `.nocode/agents/`
 
@@ -61,6 +62,7 @@ frontend/
   types/                 前后端事件类型
 
 .nocode/agents/          项目级 subagent 定义（运行时发现，仓库默认 agent 也放这里）
+.nocode/config.yaml     项目级运行配置（默认查找位置）
 
 scripts/
   install_nocode_launcher.sh
@@ -120,6 +122,7 @@ PYTHONPATH=src python3 -m nocode_agent.app.backend_stdio
 - 这样做的目标是暴露理解缺口并让用户及时纠偏，不是展示完整思维链；简单任务不要过度解释
 - 改动尽量贴近现有架构，减少额外结构债
 - 配置、路径、状态目录相关逻辑优先复用 `src/nocode_agent/runtime/paths.py`
+- 项目级配置默认路径是 `.nocode/config.yaml`；根目录 `config.yaml` 不参与默认查找
 - 运行时相对路径应锚定项目根，而不是当前 shell 的 `cwd`
 - 涉及配置时，优先参考 `config.example.yaml`
 - 敏感信息不要写进仓库

@@ -159,7 +159,8 @@ class BackendStartupSmokeTest(unittest.TestCase):
             project_root.mkdir()
             user_home = temp_root / "home"
             user_home.mkdir()
-            config_path = project_root / "config.yaml"
+            config_path = project_root / ".nocode" / "config.yaml"
+            config_path.parent.mkdir(parents=True)
             config_path.write_text(
                 textwrap.dedent(
                     """\
@@ -187,7 +188,6 @@ class BackendStartupSmokeTest(unittest.TestCase):
             env = os.environ.copy()
             env["HOME"] = str(user_home)
             env["NOCODE_PROJECT_DIR"] = str(project_root)
-            env["NOCODE_AGENT_CONFIG"] = str(config_path)
             python_path_entries = [str(REPO_ROOT / "src")]
             if env.get("PYTHONPATH"):
                 python_path_entries.append(env["PYTHONPATH"])
@@ -402,7 +402,8 @@ class TuiBackendErrorVisibilityTest(unittest.TestCase):
         _ensure_frontend_built()
         with tempfile.TemporaryDirectory(dir="/tmp") as temp_dir:
             project_root = Path(temp_dir).resolve()
-            config_path = project_root / "config.yaml"
+            config_path = project_root / ".nocode" / "config.yaml"
+            config_path.parent.mkdir(parents=True)
             config_path.write_text(
                 textwrap.dedent(
                     """\
@@ -437,7 +438,6 @@ class TuiBackendErrorVisibilityTest(unittest.TestCase):
 
             env = os.environ.copy()
             env["PYTHON_BIN"] = str(fake_python)
-            env["NOCODE_AGENT_CONFIG"] = str(config_path)
             env["NOCODE_LOG_FILE"] = str(project_root / "nocode.log")
             env["NOCODE_STATE_DIR"] = str(project_root / ".state")
             env["TERM"] = env.get("TERM", "xterm-256color")

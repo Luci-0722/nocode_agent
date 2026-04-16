@@ -1,3 +1,5 @@
+# 把这份文件复制到 `<project>/.nocode/config.yaml` 或 `~/.nocode/config.yaml`
+
 # ── 模型配置 ─────────────────────────────────────────────────────
 # 支持配置多个模型，通过 /models 命令切换
 models:

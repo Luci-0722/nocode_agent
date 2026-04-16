@@ -2,7 +2,7 @@
 
 ## 功能概述
 
-支持在 `config.yaml` 中配置多个模型，通过 `/models` 命令在会话间切换，无需修改配置文件或重启。
+支持在项目 `.nocode/config.yaml` 或全局 `~/.nocode/config.yaml` 中配置多个模型，通过 `/models` 命令在会话间切换，无需修改配置文件或重启。
 
 ## 设计动机
 

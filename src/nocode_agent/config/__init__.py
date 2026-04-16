@@ -8,16 +8,20 @@ from urllib.parse import urlparse
 
 import yaml
 
-from nocode_agent.runtime.paths import runtime_root
+from nocode_agent.runtime.paths import PROJECT_CONFIG_PATH, project_config_path
 
 logger = logging.getLogger(__name__)
 
 
-# 默认配置文件位于当前运行项目根目录；源码仓库与已安装场景共用这套逻辑。
-DEFAULT_CONFIG_PATH = runtime_root() / "config.yaml"
+# 默认配置文件相对项目根路径；实际绝对路径在运行时结合项目根解析。
+DEFAULT_CONFIG_PATH = PROJECT_CONFIG_PATH
 
-# 全局兜底配置：当项目目录下没有 config.yaml 时，读取 ~/.nocode/config.yaml。
+# 全局兜底配置：当项目目录下没有 .nocode/config.yaml 时，读取 ~/.nocode/config.yaml。
 GLOBAL_CONFIG_PATH = Path.home() / ".nocode" / "config.yaml"
+
+
+def _resolve_default_config_path() -> Path:
+    return project_config_path()
 
 
 def _resolve_global_config_path() -> Path:
@@ -72,7 +76,7 @@ def load_config(config_path: str | None = None) -> dict[str, Any]:
         or os.environ.get("NOCODE_AGENT_CONFIG")
         or os.environ.get("NOCODE_CONFIG")
         or os.environ.get("BF_CONFIG")
-        or str(DEFAULT_CONFIG_PATH)
+        or str(_resolve_default_config_path())
     )
     config_file = Path(resolved).expanduser()
     global_config_path = _resolve_global_config_path()

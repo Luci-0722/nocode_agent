@@ -6,6 +6,10 @@ import hashlib
 import os
 from pathlib import Path
 
+PROJECT_CONFIG_DIRNAME = ".nocode"
+PROJECT_CONFIG_FILENAME = "config.yaml"
+PROJECT_CONFIG_PATH = Path(PROJECT_CONFIG_DIRNAME) / PROJECT_CONFIG_FILENAME
+
 
 def _project_hash(project_path: Path) -> str:
     """计算项目路径的唯一标识符。"""
@@ -49,12 +53,34 @@ def _find_repo_root(start: Path) -> Path | None:
     return None
 
 
+def _project_config_path_for(project_root: Path) -> Path:
+    return project_root / PROJECT_CONFIG_PATH
+
+
+def project_config_path(project_root: Path | None = None) -> Path:
+    """返回项目级配置文件路径 ``<project>/.nocode/config.yaml``。"""
+    base = project_root.resolve() if project_root is not None else runtime_root()
+    return _project_config_path_for(base)
+
+
+def _find_runtime_project_root(cwd: Path) -> Path | None:
+    """从当前目录向上查找项目根，只认项目级 `.nocode/config.yaml`。"""
+    home = Path.home().resolve()
+    for candidate in [cwd, *cwd.parents]:
+        # ~/.nocode/config.yaml 是全局兜底配置，不应把 HOME 误判成项目根。
+        if candidate == home and cwd != home:
+            continue
+        if _project_config_path_for(candidate).exists():
+            return candidate
+    return None
+
+
 def runtime_root() -> Path:
     """返回当前运行实例应绑定的项目根目录。
 
     优先级：
     1. `NOCODE_PROJECT_DIR` 环境变量
-    2. 从当前工作目录向上搜索到的包含 `config.yaml` 的目录
+    2. 从当前工作目录向上搜索到的包含 `.nocode/config.yaml` 的目录
     3. 当前工作目录
     """
     configured = os.environ.get("NOCODE_PROJECT_DIR", "").strip()
@@ -62,9 +88,9 @@ def runtime_root() -> Path:
         return Path(configured).expanduser().resolve()
 
     cwd = Path.cwd().resolve()
-    for candidate in [cwd, *cwd.parents]:
-        if (candidate / "config.yaml").exists():
-            return candidate
+    detected = _find_runtime_project_root(cwd)
+    if detected is not None:
+        return detected
 
     return cwd
 
