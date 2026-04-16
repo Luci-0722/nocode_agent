@@ -15,12 +15,12 @@ export default function ModelPicker() {
         const isDefault = option.is_default === 'true';
         return (
           <Box key={option.name}>
-            <Text color={selected ? 'cyan' : undefined}>{selected ? '>' : ' '}</Text>
+            <Text color={selected ? 'green' : undefined}>{selected ? '>' : ' '}</Text>
             <Text> </Text>
             <Text bold={selected}>{option.name}</Text>
             <Text dimColor>{` (${option.model})`}</Text>
-            {isCurrent && <Text color="cyan"> current</Text>}
-            {isDefault && <Text color="green"> default</Text>}
+            {isCurrent && <Text color="green"> current</Text>}
+            {isDefault && <Text color="yellow"> default</Text>}
           </Box>
         );
       })}

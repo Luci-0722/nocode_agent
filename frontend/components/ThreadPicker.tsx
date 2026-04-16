@@ -14,7 +14,7 @@ export default function ThreadPicker() {
         return (
           <Box key={thread.thread_id} flexDirection="column" marginBottom={1}>
             <Box>
-              <Text color={selected ? 'cyan' : undefined}>{selected ? '>' : ' '}</Text>
+              <Text color={selected ? 'green' : undefined}>{selected ? '>' : ' '}</Text>
               <Text> </Text>
               <Text bold={selected}>{thread.thread_id.slice(0, 8)}</Text>
               <Text dimColor>{`  ${thread.message_count} msg`}</Text>

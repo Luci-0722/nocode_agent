@@ -26,7 +26,7 @@ export default function QuestionDialog() {
             return (
               <Box key={`${option.label}-${index}`} flexDirection="column" marginBottom={1}>
                 <Box>
-                  <Text color={selected ? 'cyan' : undefined}>{selected ? '>' : ' '}</Text>
+                  <Text color={selected ? 'green' : undefined}>{selected ? '>' : ' '}</Text>
                   <Text> </Text>
                   <Text>{checked ? '[x]' : '[ ]'}</Text>
                   <Text> </Text>
@@ -40,9 +40,9 @@ export default function QuestionDialog() {
       ) : (
         <Box flexDirection="column" marginTop={1}>
           <Text dimColor>Type your answer and press Enter.</Text>
-          <Box borderStyle="round" borderColor="cyan" paddingX={1}>
+          <Box borderStyle="round" borderColor="gray" paddingX={1}>
             <Text>{questionRequest.textAnswer}</Text>
-            <Text backgroundColor="cyan"> </Text>
+            <Text backgroundColor="green"> </Text>
           </Box>
         </Box>
       )}

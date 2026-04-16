@@ -26,11 +26,11 @@ export default function PermissionDialog() {
         </Box>
       )}
       <Box marginTop={1}>
-        <Text color={approveSelected ? 'cyan' : undefined}>{approveSelected ? '>' : ' '}</Text>
+        <Text color={approveSelected ? 'green' : undefined}>{approveSelected ? '>' : ' '}</Text>
         <Text> Approve</Text>
       </Box>
       <Box>
-        <Text color={!approveSelected ? 'cyan' : undefined}>{!approveSelected ? '>' : ' '}</Text>
+        <Text color={!approveSelected ? 'green' : undefined}>{!approveSelected ? '>' : ' '}</Text>
         <Text> Reject</Text>
       </Box>
     </DialogFrame>
