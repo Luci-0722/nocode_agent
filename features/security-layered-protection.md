@@ -7,21 +7,23 @@
 - 当前真正生效的是“工具级工作区边界 + 已读校验 + 人工审批 + 可选 `bash` 系统沙箱”。
 - 它不是“整个 agent 运行在统一 OS 沙箱里”。
 - `read`/`write`/`edit`/`list_dir`/`grep` 的隔离主要在 Python 应用层。
+- `security.deny_paths` 现在已经落到文件工具路径检查里，并内置了一组默认敏感目录。
 - 真正的操作系统级沙箱只包裹内建 `bash` 工具，而且默认关闭。
-- `config.example.yaml` 里提到的 `security.deny_paths`，当前代码并没有实现对应检查逻辑。
 
 ## 1. 工作区边界是怎么做的
 
-当前文件工具的默认边界是“backend 进程启动时的 `cwd`”。
+当前文件工具的边界是“backend 进程启动时的 `cwd` + denylist”。
 
 - TUI 启动 backend 时，直接把后端工作目录设成当前终端目录：`frontend/hooks/useBackend.ts:562-569`
 - 工具层通过 `_workspace_root()` 读取 `Path.cwd().resolve()` 作为工作区根：`src/nocode_agent/tool/kit.py:77-78`
-- `_resolve_path()` 会先 `expanduser()`，相对路径拼到工作区下，再执行 `resolve()`，最后检查解析后的真实路径必须仍在工作区内：`src/nocode_agent/tool/kit.py:81-89`
+- `_resolve_path()` 会先 `expanduser()`，相对路径拼到工作区下，再执行 `resolve()`，然后依次检查 denylist 和工作区边界：`src/nocode_agent/tool/kit.py`
+- denylist 来自 `security.deny_paths`，并叠加默认敏感目录：`~/.ssh`、`~/.gnupg`、`~/.aws`、`~/.netrc`、`~/.config/gh`、`~/.docker`
 
 这意味着：
 
 - `../` 逃逸会被拦住
 - 直接传绝对路径到工作区外会被拦住
+- 即使目标在工作区内，只要命中 `deny_paths` 也会被拒绝
 - 工作区内指向外部路径的 symlink，在 `resolve()` 后也会因为真实目标不在工作区内而被拒绝
 
 当前依赖 `_resolve_path()` 的内建文件相关工具有：
@@ -29,7 +31,7 @@
 - `read` / `write` / `edit` / `list_dir`：`src/nocode_agent/tool/filesystem.py`
 - `grep`：先把起点路径过 `_resolve_path()`，再执行 `rg` 或 Python 搜索：`src/nocode_agent/tool/search.py:233-256`
 
-`glob` 没有接收绝对路径参数，而是直接在工作区根上做 `root.glob(pattern)`：`src/nocode_agent/tool/filesystem.py:149-168`
+`glob` 没有接收绝对路径参数，而是直接在工作区根上做 `root.glob(pattern)`；当前实现会在返回结果前过滤掉命中 denylist 的路径。`list_dir` 和 `grep` 也会跳过 denylist 下的条目：`src/nocode_agent/tool/filesystem.py`、`src/nocode_agent/tool/search.py`
 
 这里要注意一个边界语义：
 
@@ -182,6 +184,7 @@ Linux 走 `bubblewrap`：
 | 场景 | 当前水平 | 说明 |
 | --- | --- | --- |
 | `read` / `grep` / `list_dir` / `glob` 访问工作区外文件 | 中等 | 对常规 `../`、绝对路径和外跳 symlink 有效，因为最终都要落到 `_resolve_path()` 的真实路径检查上 |
+| 访问工作区内但被 deny 的敏感路径 | 中等偏高 | `read` / `write` / `edit` 会直接拒绝，`glob` / `list_dir` / `grep` 会过滤这些路径 |
 | 误覆盖已有文件 | 中等偏高 | `write` / `edit` 要求先读且 `mtime` 未变，能挡住大量误操作 |
 | 未经确认执行高风险工具 | 中等 | 依赖 `permissions.enabled` 和审批配置，属于策略层，不是系统层 |
 | `bash` 任意访问宿主机 | 低到中等 | 默认不开沙箱；一旦用户批准，命令就是宿主机当前用户权限 |
@@ -200,14 +203,13 @@ Linux 走 `bubblewrap`：
 ### 已落地
 
 - 工作区边界检查
+- `security.deny_paths` 路径黑名单
 - 已读校验与防陈旧编辑
 - 高风险工具审批
 - 可选 `bash` OS 沙箱
 
 ### 当前未落地或不完整
 
-- `security.deny_paths`
-  `config.example.yaml:145-167` 还保留了注释，但当前 `src/nocode_agent/tool/kit.py` 中没有对应 denylist 检查逻辑
 - “全运行时统一沙箱”
   当前只有 `bash` 被包装
 - Linux 域名级网络白名单
@@ -215,7 +217,7 @@ Linux 走 `bubblewrap`：
 - Windows 沙箱
   当前没有实现
 - 完整测试覆盖
-  `tests/` 下目前没有直接覆盖 `runtime/sandbox.py` 或 `_resolve_path()` 行为的专门测试
+  `deny_paths` 已补到 `tests/test_tool_kit.py` 与 `tests/test_search.py`，但 `runtime/sandbox.py` 仍缺少专门测试
 
 ### 安全语义上还要保守看待的点
 
@@ -242,7 +244,7 @@ Linux 走 `bubblewrap`：
 
 如果后续要继续提升隔离强度，优先级建议是：
 
-1. 把 `security.deny_paths` 真正落到 `_resolve_path()`
-2. 给 `_resolve_path()` 和 `runtime/sandbox.py` 补专门测试
-3. 在只读子代理里默认去掉 `bash`，或至少把它和审批/沙箱强绑定
-4. 把 Linux 网络控制从“开/关”升级为真正可组合的出口策略
+1. 给 `runtime/sandbox.py` 补专门测试
+2. 在只读子代理里默认去掉 `bash`，或至少把它和审批/沙箱强绑定
+3. 把 Linux 网络控制从“开/关”升级为真正可组合的出口策略
+4. 评估是否要把 deny 规则继续下沉到更多外部工具接入点

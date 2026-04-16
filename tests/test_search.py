@@ -86,7 +86,49 @@ class SearchToolTest(unittest.TestCase):
                 "--glob",
                 "*.py",
                 "print",
-                r"src\app.py",
+                "src/app.py",
+            ],
+        )
+
+    def test_grep_with_rg_adds_excludes_for_denied_paths(self) -> None:
+        workspace = Path("/workspace")
+        target = workspace / "src"
+        denied_dir = workspace / "secrets"
+        captured: dict[str, object] = {}
+
+        async def fake_run_rg(cmd: list[str], cwd: Path) -> tuple[bytes, bytes, int]:
+            captured["cmd"] = cmd
+            captured["cwd"] = cwd
+            return (b"", b"", 1)
+
+        with (
+            patch("nocode_agent.tool.search._get_rg_path", return_value="rg"),
+            patch("nocode_agent.tool.search._run_rg", side_effect=fake_run_rg),
+            patch("nocode_agent.tool.kit._workspace_root", return_value=workspace),
+            patch("nocode_agent.tool.kit._get_deny_paths", return_value=(denied_dir,)),
+            patch("pathlib.Path.is_dir", autospec=True, return_value=True),
+        ):
+            result = search._grep_with_rg("secret", target, "*.py", "content", 0, 20)
+
+        self.assertEqual(result, "未找到匹配内容。")
+        self.assertEqual(captured["cwd"], workspace)
+        self.assertEqual(
+            captured["cmd"],
+            [
+                "rg",
+                "--no-config",
+                "--no-ignore-vcs",
+                "--line-number",
+                "--max-count",
+                "20",
+                "--glob",
+                "*.py",
+                "--glob",
+                "!secrets",
+                "--glob",
+                "!secrets/**",
+                "secret",
+                "src",
             ],
         )
 

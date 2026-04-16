@@ -149,11 +149,11 @@ class GlobInput(BaseModel):
 @tool("glob", args_schema=GlobInput)
 def glob_search(pattern: str) -> str:
     """在工作区内执行 glob 搜索，返回按修改时间降序排列的路径。目录以 `/` 结尾。"""
-    from nocode_agent.tool.kit import _trim_output, _workspace_root
+    from nocode_agent.tool.kit import _is_path_accessible, _trim_output, _workspace_root
 
     root = _workspace_root()
     try:
-        paths = list(root.glob(pattern))
+        paths = [path for path in root.glob(pattern) if _is_path_accessible(path)]
     except Exception:
         paths = []
     paths.sort(key=lambda path: path.stat().st_mtime, reverse=True)
@@ -177,18 +177,22 @@ class ListDirInput(BaseModel):
 @tool("list_dir", args_schema=ListDirInput)
 def list_dir(path: str = ".", recursive: bool = False, max_entries: int = 200) -> str:
     """列出目录内容。"""
-    from nocode_agent.tool.kit import _resolve_path, _trim_output, _workspace_root
+    from nocode_agent.tool.kit import _is_path_accessible, _resolve_path, _trim_output, _workspace_root
 
     try:
         root = _resolve_path(path)
         iterator = root.rglob("*") if recursive else root.iterdir()
         entries: list[str] = []
         workspace = _workspace_root()
-        for index, item in enumerate(sorted(iterator), start=1):
+        visible_count = 0
+        for item in sorted(iterator):
+            if not _is_path_accessible(item):
+                continue
             rel = item.relative_to(workspace)
             suffix = "/" if item.is_dir() else ""
             entries.append(f"{rel}{suffix}")
-            if index >= max_entries:
+            visible_count += 1
+            if visible_count >= max_entries:
                 entries.append(f"\n[结果已截断，最多 {max_entries} 条]")
                 break
         if not entries:

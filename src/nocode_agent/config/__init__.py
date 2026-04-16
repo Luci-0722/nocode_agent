@@ -24,6 +24,17 @@ def _resolve_global_config_path() -> Path:
     return Path.home() / ".nocode" / "config.yaml"
 
 
+def _read_yaml_config(config_file: Path) -> dict[str, Any] | None:
+    try:
+        with open(config_file, encoding="utf-8") as handle:
+            return yaml.safe_load(handle) or {}
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        logger.warning("Unable to read config file %s: %s", config_file, exc)
+        return None
+
+
 def _resolve_proxy_section(config: dict[str, Any]) -> tuple[str, Any]:
     """提取代理主配置，兼容字符串和对象两种写法。"""
     proxy_value = config.get("proxy", "")
@@ -65,32 +76,28 @@ def load_config(config_path: str | None = None) -> dict[str, Any]:
     )
     config_file = Path(resolved).expanduser()
     global_config_path = _resolve_global_config_path()
-    try:
-        with open(config_file, encoding="utf-8") as handle:
-            return yaml.safe_load(handle) or {}
-    except FileNotFoundError:
-        # 项目级配置不存在时，回退到全局配置 ~/.nocode/config.yaml
-        if config_file != global_config_path:
-            logger.debug(
-                "Config not found at %s, trying global config at %s",
-                config_file, global_config_path,
-            )
-            try:
-                with open(global_config_path, encoding="utf-8") as handle:
-                    return yaml.safe_load(handle) or {}
-            except FileNotFoundError:
-                pass
-        logger.debug("Config file not found: %s", config_file)
-        return {}
+    primary = _read_yaml_config(config_file)
+    if primary is not None:
+        return primary
+
+    # 项目级配置不存在时，回退到全局配置 ~/.nocode/config.yaml
+    if config_file != global_config_path:
+        logger.debug(
+            "Config not found at %s, trying global config at %s",
+            config_file, global_config_path,
+        )
+        fallback = _read_yaml_config(global_config_path)
+        if fallback is not None:
+            return fallback
+
+    logger.debug("Config file not found: %s", config_file)
+    return {}
 
 
 def load_global_config() -> dict[str, Any]:
     config_file = _resolve_global_config_path()
-    try:
-        with open(config_file, encoding="utf-8") as handle:
-            return yaml.safe_load(handle) or {}
-    except FileNotFoundError:
-        return {}
+    config = _read_yaml_config(config_file)
+    return config or {}
 
 
 def save_global_default_model(model_name: str) -> None:
@@ -101,9 +108,12 @@ def save_global_default_model(model_name: str) -> None:
     config_file = _resolve_global_config_path()
     payload = load_global_config()
     payload["default_model"] = selected
-    config_file.parent.mkdir(parents=True, exist_ok=True)
-    with open(config_file, "w", encoding="utf-8") as handle:
-        yaml.safe_dump(payload, handle, allow_unicode=True, sort_keys=False)
+    try:
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_file, "w", encoding="utf-8") as handle:
+            yaml.safe_dump(payload, handle, allow_unicode=True, sort_keys=False)
+    except OSError as exc:
+        logger.warning("Unable to persist global default model to %s: %s", config_file, exc)
 
 
 def _is_local_base_url(base_url: str) -> bool:

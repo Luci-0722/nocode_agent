@@ -145,7 +145,8 @@ permissions:
 security:
   # ── 安全防护 ───────────────────────────────────
   # deny_paths: 禁止访问的敏感目录列表
-  # 这些路径即使在工作区内也无法被 read/write/edit 访问
+  # 这些路径即使在工作区内也无法被 read/write/edit 访问，
+  # 并会从 glob/list_dir/grep 结果中过滤掉
   # 默认已包含: ~/.ssh, ~/.gnupg, ~/.aws, ~/.netrc, ~/.config/gh, ~/.docker
   # 可追加自定义敏感路径：
   # deny_paths:

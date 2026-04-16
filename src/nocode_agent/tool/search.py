@@ -93,7 +93,7 @@ def _grep_with_rg(
     max_matches: int,
 ) -> str | None:
     """用 ripgrep 执行搜索。返回结果字符串，或 None 表示 rg 不可用/出错。"""
-    from nocode_agent.tool.kit import _trim_output, _workspace_root
+    from nocode_agent.tool.kit import _get_deny_paths, _trim_output, _workspace_root
 
     rg = _get_rg_path()
     if not rg:
@@ -120,6 +120,18 @@ def _grep_with_rg(
 
     if file_glob and file_glob != "*":
         cmd += ["--glob", file_glob]
+
+    for deny_path in _get_deny_paths():
+        try:
+            rel = deny_path.relative_to(workspace)
+        except ValueError:
+            continue
+        rel_pattern = rel.as_posix()
+        if not rel_pattern:
+            continue
+        cmd += ["--glob", f"!{rel_pattern}"]
+        if deny_path.is_dir():
+            cmd += ["--glob", f"!{rel_pattern}/**"]
 
     cmd.append(pattern)
     cmd.append(cwd)
@@ -169,7 +181,7 @@ def _grep_with_python(
     max_matches: int,
 ) -> str:
     """纯 Python 的 grep 实现。"""
-    from nocode_agent.tool.kit import _trim_output, _workspace_root
+    from nocode_agent.tool.kit import _is_path_accessible, _trim_output, _workspace_root
 
     try:
         regex = re.compile(pattern)
@@ -182,6 +194,8 @@ def _grep_with_python(
 
     for file in files:
         if not file.is_file():
+            continue
+        if not _is_path_accessible(file):
             continue
         if not fnmatch.fnmatch(file.name, file_glob):
             continue
