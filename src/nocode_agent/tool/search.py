@@ -100,10 +100,10 @@ def _grep_with_rg(
         return None
 
     cmd = [rg, "--no-config", "--no-ignore-vcs"]
-    workspace = _workspace_root()
+    anchor = _workspace_root()
     try:
-        search_root = base.relative_to(workspace)
-        rg_cwd = workspace
+        search_root = base.relative_to(anchor)
+        rg_cwd = anchor
         cwd = "." if str(search_root) == "." else str(search_root)
     except ValueError:
         rg_cwd = base.parent if base.is_file() else base
@@ -123,7 +123,7 @@ def _grep_with_rg(
 
     for deny_path in _get_deny_paths():
         try:
-            rel = deny_path.relative_to(workspace)
+            rel = deny_path.relative_to(rg_cwd)
         except ValueError:
             continue
         rel_pattern = rel.as_posix()
@@ -181,14 +181,14 @@ def _grep_with_python(
     max_matches: int,
 ) -> str:
     """纯 Python 的 grep 实现。"""
-    from nocode_agent.tool.kit import _is_path_accessible, _trim_output, _workspace_root
+    from nocode_agent.runtime.workspace import render_workspace_path
+    from nocode_agent.tool.kit import _is_path_accessible, _trim_output
 
     try:
         regex = re.compile(pattern)
     except re.error as error:
         return f"错误：无效正则: {error}"
 
-    workspace = _workspace_root()
     results: list[str] = []
     files = [base] if base.is_file() else sorted(base.rglob("*"))
 
@@ -204,7 +204,7 @@ def _grep_with_python(
         except (UnicodeDecodeError, Exception):
             continue
 
-        rel_path = str(file.relative_to(workspace))
+        rel_path = render_workspace_path(file)
 
         if output_mode == "files_with_matches":
             for line in lines:

@@ -4,10 +4,24 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from langchain.agents.middleware import HumanInTheLoopMiddleware
-from langchain.agents.middleware.human_in_the_loop import InterruptOnConfig
+from langchain.agents.middleware.human_in_the_loop import (
+    ActionRequest,
+    HITLRequest,
+    InterruptOnConfig,
+    ReviewConfig,
+    interrupt,
+)
+from langchain_core.messages import AIMessage, ToolMessage
+
+from nocode_agent.runtime.paths import project_config_path
+from nocode_agent.runtime.workspace import (
+    get_unauthorized_workspace_roots,
+    persist_additional_workspace_roots,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +65,157 @@ class NoCodeHumanInTheLoopMiddleware(HumanInTheLoopMiddleware):
         )
         action_request["tool_call_id"] = str(tool_call.get("id", "") or "")
         return action_request, review_config
+
+    def _build_workspace_action(self, tool_call: dict[str, Any]) -> tuple[ActionRequest, ReviewConfig, InterruptOnConfig, tuple[str, ...]] | None:
+        tool_name = str(tool_call.get("name", "") or "tool")
+        tool_args = tool_call.get("args", {}) if isinstance(tool_call.get("args"), dict) else {}
+        requested_roots = tuple(str(path) for path in get_unauthorized_workspace_roots(tool_name, tool_args))
+        if not requested_roots:
+            return None
+
+        config = InterruptOnConfig(
+            allowed_decisions=["approve", "reject"],
+            description=self._workspace_description(tool_name, tool_args, requested_roots),
+        )
+        action_request = ActionRequest(
+            name=tool_name,
+            args=self._workspace_action_args(tool_name, tool_args, requested_roots),
+            description=config["description"],
+        )
+        action_request["tool_call_id"] = str(tool_call.get("id", "") or "")
+        review_config = ReviewConfig(
+            action_name=tool_name,
+            allowed_decisions=config["allowed_decisions"],
+        )
+        return action_request, review_config, config, requested_roots
+
+    def _workspace_action_args(
+        self,
+        tool_name: str,
+        tool_args: dict[str, Any],
+        requested_roots: tuple[str, ...],
+    ) -> dict[str, Any]:
+        preview: dict[str, Any] = {"additional_directories": list(requested_roots)}
+        if tool_name == "bash":
+            preview["command"] = str(tool_args.get("command", "") or "").strip()
+            return preview
+        for key in ("file_path", "path", "pattern"):
+            value = str(tool_args.get(key, "") or "").strip()
+            if value:
+                preview[key] = value
+                break
+        return preview
+
+    def _workspace_description(
+        self,
+        tool_name: str,
+        tool_args: dict[str, Any],
+        requested_roots: tuple[str, ...],
+    ) -> str:
+        config_file = project_config_path()
+        args_preview = _format_json(self._workspace_action_args(tool_name, tool_args, requested_roots))
+        lines = [
+            "以下工具调用需要为当前项目授权额外目录：",
+            "",
+            f"工具: {tool_name}",
+            "将要授权的目录:",
+            *[f"- {root}" for root in requested_roots],
+            "",
+            f"批准后会写入: {config_file}",
+            "配置字段: workspace.additional_directories",
+            "",
+            "参数预览:",
+            args_preview,
+        ]
+        return "\n".join(lines)
+
+    def after_model(self, state: dict[str, Any], runtime: Any) -> dict[str, Any] | None:  # type: ignore[override]
+        messages = state["messages"]
+        if not messages:
+            return None
+
+        last_ai_msg = next((msg for msg in reversed(messages) if isinstance(msg, AIMessage)), None)
+        if not last_ai_msg or not last_ai_msg.tool_calls:
+            return None
+
+        action_requests: list[ActionRequest] = []
+        review_configs: list[ReviewConfig] = []
+        interrupt_indices: list[int] = []
+        configs_by_index: dict[int, InterruptOnConfig] = {}
+        workspace_roots_by_index: dict[int, tuple[str, ...]] = {}
+
+        for idx, tool_call in enumerate(last_ai_msg.tool_calls):
+            workspace_action = self._build_workspace_action(tool_call)
+            if workspace_action is not None:
+                action_request, review_config, config, requested_roots = workspace_action
+                action_requests.append(action_request)
+                review_configs.append(review_config)
+                interrupt_indices.append(idx)
+                configs_by_index[idx] = config
+                workspace_roots_by_index[idx] = requested_roots
+                continue
+
+            if (config := self.interrupt_on.get(tool_call["name"])) is None:
+                continue
+            action_request, review_config = self._create_action_and_config(
+                tool_call, config, state, runtime
+            )
+            action_requests.append(action_request)
+            review_configs.append(review_config)
+            interrupt_indices.append(idx)
+            configs_by_index[idx] = config
+
+        if not action_requests:
+            return None
+
+        decisions = interrupt(
+            HITLRequest(action_requests=action_requests, review_configs=review_configs)
+        )["decisions"]
+        if (decisions_len := len(decisions)) != (interrupt_count := len(interrupt_indices)):
+            msg = (
+                f"Number of human decisions ({decisions_len}) does not match "
+                f"number of hanging tool calls ({interrupt_count})."
+            )
+            raise ValueError(msg)
+
+        revised_tool_calls: list[dict[str, Any]] = []
+        artificial_tool_messages: list[ToolMessage] = []
+        decision_idx = 0
+
+        for idx, tool_call in enumerate(last_ai_msg.tool_calls):
+            if idx not in interrupt_indices:
+                revised_tool_calls.append(tool_call)
+                continue
+
+            config = configs_by_index[idx]
+            decision = decisions[decision_idx]
+            decision_idx += 1
+            revised_tool_call, tool_message = self._process_decision(decision, tool_call, config)
+
+            requested_roots = workspace_roots_by_index.get(idx)
+            if requested_roots and revised_tool_call is not None and tool_message is None:
+                try:
+                    persisted = persist_additional_workspace_roots(Path(root) for root in requested_roots)
+                except Exception as error:
+                    logger.error("Persist additional workspace roots failed: %s", error, exc_info=True)
+                    revised_tool_call = None
+                    tool_message = ToolMessage(
+                        content=f"授权额外目录失败: {error}",
+                        name=tool_call["name"],
+                        tool_call_id=tool_call["id"],
+                        status="error",
+                    )
+                else:
+                    if persisted:
+                        logger.info("Persisted additional workspace roots: %s", ", ".join(str(item) for item in persisted))
+
+            if revised_tool_call is not None:
+                revised_tool_calls.append(revised_tool_call)
+            if tool_message is not None:
+                artificial_tool_messages.append(tool_message)
+
+        last_ai_msg.tool_calls = revised_tool_calls
+        return {"messages": [last_ai_msg, *artificial_tool_messages]}
 
 
 def _normalize_interrupt_config(
@@ -133,7 +298,9 @@ def build_human_in_the_loop_middleware(
         return None
 
     raw_interrupt_on = config.get("interrupt_on")
-    if not isinstance(raw_interrupt_on, dict) or not raw_interrupt_on:
+    if raw_interrupt_on is None:
+        raw_interrupt_on = _default_interrupt_map()
+    elif not isinstance(raw_interrupt_on, dict):
         raw_interrupt_on = _default_interrupt_map()
 
     interrupt_on: dict[str, bool | InterruptOnConfig] = {}
@@ -141,9 +308,6 @@ def build_human_in_the_loop_middleware(
         normalized = _normalize_interrupt_config(str(tool_name), raw_tool_config)
         if normalized is not False:
             interrupt_on[str(tool_name)] = normalized
-
-    if not interrupt_on:
-        return None
 
     description_prefix = str(
         config.get("description_prefix") or "Tool execution requires approval"

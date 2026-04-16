@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import glob as globlib
+from pathlib import Path
+
 from langchain.tools import tool
 from pydantic import BaseModel, Field
 
@@ -149,17 +152,22 @@ class GlobInput(BaseModel):
 @tool("glob", args_schema=GlobInput)
 def glob_search(pattern: str) -> str:
     """在工作区内执行 glob 搜索，返回按修改时间降序排列的路径。目录以 `/` 结尾。"""
-    from nocode_agent.tool.kit import _is_path_accessible, _trim_output, _workspace_root
+    from nocode_agent.runtime.workspace import render_workspace_path, resolve_glob_pattern
+    from nocode_agent.tool.kit import _is_path_accessible, _trim_output
 
-    root = _workspace_root()
     try:
-        paths = [path for path in root.glob(pattern) if _is_path_accessible(path)]
+        resolved_pattern = resolve_glob_pattern(pattern)
+        paths = [
+            Path(match).resolve(strict=False)
+            for match in globlib.glob(resolved_pattern, recursive=True)
+            if _is_path_accessible(Path(match))
+        ]
     except Exception:
         paths = []
     paths.sort(key=lambda path: path.stat().st_mtime, reverse=True)
     matches = []
     for path in paths:
-        rel = str(path.relative_to(root))
+        rel = render_workspace_path(path)
         if path.is_dir():
             rel += "/"
         matches.append(rel)
@@ -177,18 +185,18 @@ class ListDirInput(BaseModel):
 @tool("list_dir", args_schema=ListDirInput)
 def list_dir(path: str = ".", recursive: bool = False, max_entries: int = 200) -> str:
     """列出目录内容。"""
-    from nocode_agent.tool.kit import _is_path_accessible, _resolve_path, _trim_output, _workspace_root
+    from nocode_agent.runtime.workspace import render_workspace_path
+    from nocode_agent.tool.kit import _is_path_accessible, _resolve_path, _trim_output
 
     try:
         root = _resolve_path(path)
         iterator = root.rglob("*") if recursive else root.iterdir()
         entries: list[str] = []
-        workspace = _workspace_root()
         visible_count = 0
         for item in sorted(iterator):
             if not _is_path_accessible(item):
                 continue
-            rel = item.relative_to(workspace)
+            rel = render_workspace_path(item)
             suffix = "/" if item.is_dir() else ""
             entries.append(f"{rel}{suffix}")
             visible_count += 1

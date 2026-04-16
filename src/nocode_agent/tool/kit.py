@@ -5,10 +5,14 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Awaitable, Callable
-from functools import lru_cache
 from pathlib import Path
-from typing import Any
 
+from nocode_agent.runtime.security import check_deny_rules, get_deny_paths, is_path_denied
+from nocode_agent.runtime.workspace import (
+    current_workspace_root,
+    get_allowed_workspace_roots,
+    is_within_allowed_workspace,
+)
 from .delegate import make_agent_tool
 from .filesystem import (
     EditInput,
@@ -50,14 +54,7 @@ from .web import (
 logger = logging.getLogger(__name__)
 
 _MAX_OUTPUT = 12_000
-_DEFAULT_DENY_PATHS: tuple[str, ...] = (
-    "~/.ssh",
-    "~/.gnupg",
-    "~/.aws",
-    "~/.netrc",
-    "~/.config/gh",
-    "~/.docker",
-)
+_get_deny_paths = get_deny_paths
 
 # 匹配所有 ANSI 转义序列（包括真彩色、256色、粗体等）
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[mK]")
@@ -84,66 +81,19 @@ def _sanitize_text(text: str) -> str:
 
 
 def _workspace_root() -> Path:
-    return Path.cwd().resolve()
-
-
-def _normalize_string_list(raw_value: Any) -> list[str]:
-    if raw_value is None:
-        return []
-    if isinstance(raw_value, str):
-        value = raw_value.strip()
-        return [value] if value else []
-    if isinstance(raw_value, (list, tuple, set)):
-        normalized: list[str] = []
-        for item in raw_value:
-            value = str(item or "").strip()
-            if value:
-                normalized.append(value)
-        return normalized
-    value = str(raw_value).strip()
-    return [value] if value else []
-
-
-@lru_cache(maxsize=1)
-def _get_deny_paths() -> tuple[Path, ...]:
-    from nocode_agent.config import load_config
-
-    config = load_config()
-    security = config.get("security", {}) if isinstance(config, dict) else {}
-    raw_deny_paths = []
-    if isinstance(security, dict):
-        raw_deny_paths = _normalize_string_list(security.get("deny_paths"))
-
-    deny_paths: list[Path] = []
-    seen: set[Path] = set()
-    for raw_path in [*_DEFAULT_DENY_PATHS, *raw_deny_paths]:
-        try:
-            resolved = Path(raw_path).expanduser().resolve(strict=False)
-        except Exception:
-            logger.warning("忽略无法解析的 deny_paths 配置: %r", raw_path)
-            continue
-        if resolved in seen:
-            continue
-        seen.add(resolved)
-        deny_paths.append(resolved)
-    return tuple(deny_paths)
+    return current_workspace_root()
 
 
 def _check_deny_rules(path: Path) -> Path | None:
-    for deny_path in _get_deny_paths():
-        if path == deny_path or deny_path in path.parents:
-            return deny_path
-    return None
+    return check_deny_rules(path)
 
 
 def _is_path_within_workspace(path: Path) -> bool:
-    root = _workspace_root().resolve(strict=False)
-    resolved = path.resolve(strict=False)
-    return resolved == root or root in resolved.parents
+    return is_within_allowed_workspace(path)
 
 
 def _is_path_denied(path: Path) -> bool:
-    return _check_deny_rules(path.resolve(strict=False)) is not None
+    return is_path_denied(path)
 
 
 def _is_path_accessible(path: Path) -> bool:
@@ -160,8 +110,9 @@ def _resolve_path(file_path: str) -> Path:
     denied_by = _check_deny_rules(path)
     if denied_by is not None:
         raise ValueError(f"路径 {path} 命中禁止访问规则 {denied_by}")
-    if path != root and root not in path.parents:
-        raise ValueError(f"路径 {path} 超出当前工作区 {root}")
+    if not _is_path_within_workspace(path):
+        allowed_roots = ", ".join(str(item) for item in get_allowed_workspace_roots())
+        raise ValueError(f"路径 {path} 超出当前授权工作区；当前允许根: {allowed_roots}")
     return path
 
 

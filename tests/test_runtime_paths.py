@@ -125,6 +125,41 @@ class RuntimePathsTest(unittest.TestCase):
                 with patch("pathlib.Path.cwd", return_value=cwd):
                     self.assertEqual(load_config().get("default_model"), "global")
 
+    def test_load_config_merges_global_defaults_with_project_dot_nocode_config(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            user_home = temp_root / "home"
+            project_root = temp_root / "project"
+            cwd = project_root / "app"
+            global_config = user_home / ".nocode" / "config.yaml"
+            project_config = project_root / ".nocode" / "config.yaml"
+            extra_dir = temp_root / "shared-data"
+
+            user_home.mkdir()
+            cwd.mkdir(parents=True)
+            extra_dir.mkdir()
+            global_config.parent.mkdir(parents=True)
+            global_config.write_text(
+                "default_model: global\nmodels:\n  global:\n    model: test-model\n",
+                encoding="utf-8",
+            )
+            project_config.parent.mkdir(parents=True)
+            project_config.write_text(
+                f"workspace:\n  additional_directories:\n    - {extra_dir}\n",
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, {"HOME": str(user_home)}, clear=False):
+                with patch("pathlib.Path.cwd", return_value=cwd):
+                    config = load_config()
+
+            self.assertEqual(config.get("default_model"), "global")
+            self.assertEqual(config.get("models", {}).get("global", {}).get("model"), "test-model")
+            self.assertEqual(
+                config.get("workspace", {}).get("additional_directories"),
+                [str(extra_dir)],
+            )
+
     def test_load_config_ignores_removed_bf_config_env(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)

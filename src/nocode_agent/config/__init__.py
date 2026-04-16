@@ -31,12 +31,30 @@ def _resolve_global_config_path() -> Path:
 def _read_yaml_config(config_file: Path) -> dict[str, Any] | None:
     try:
         with open(config_file, encoding="utf-8") as handle:
-            return yaml.safe_load(handle) or {}
+            loaded = yaml.safe_load(handle)
     except FileNotFoundError:
         return None
     except OSError as exc:
         logger.warning("Unable to read config file %s: %s", config_file, exc)
         return None
+    if loaded is None:
+        return {}
+    if isinstance(loaded, dict):
+        return loaded
+    logger.warning("Ignoring non-mapping config file %s", config_file)
+    return {}
+
+
+def _deep_merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """递归合并两份配置；override 的标量/数组覆盖 base。"""
+    merged: dict[str, Any] = dict(base)
+    for key, value in override.items():
+        current = merged.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            merged[key] = _deep_merge_dicts(current, value)
+            continue
+        merged[key] = value
+    return merged
 
 
 def _resolve_proxy_section(config: dict[str, Any]) -> tuple[str, Any]:
@@ -79,19 +97,22 @@ def load_config(config_path: str | None = None) -> dict[str, Any]:
     )
     config_file = Path(resolved).expanduser()
     global_config_path = _resolve_global_config_path()
+    global_config = _read_yaml_config(global_config_path) or {}
+
+    if config_file == global_config_path:
+        return global_config
+
     primary = _read_yaml_config(config_file)
     if primary is not None:
-        return primary
+        return _deep_merge_dicts(global_config, primary)
 
     # 项目级配置不存在时，回退到全局配置 ~/.nocode/config.yaml
-    if config_file != global_config_path:
-        logger.debug(
-            "Config not found at %s, trying global config at %s",
-            config_file, global_config_path,
-        )
-        fallback = _read_yaml_config(global_config_path)
-        if fallback is not None:
-            return fallback
+    logger.debug(
+        "Config not found at %s, trying global config at %s",
+        config_file, global_config_path,
+    )
+    if global_config:
+        return global_config
 
     logger.debug("Config file not found: %s", config_file)
     return {}

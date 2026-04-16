@@ -126,6 +126,22 @@ session_memory:
   min_tool_calls_between_updates: 3
   max_total_tokens: 12000
 
+workspace:
+  # ── 工作区额外目录 ─────────────────────────────
+  # 当前 shell 的 cwd 永远是默认工作区根。
+  # 如需允许访问 cwd 之外的目录，可在这里追加绝对路径：
+  # additional_directories:
+  #   - /abs/path/to/shared-data
+  #   - /abs/path/to/another-repo
+  #
+  # 运行时会同时读取：
+  # - ~/.nocode/config.yaml
+  # - <project>/.nocode/config.yaml
+  # 项目配置覆盖全局；同名字段会合并为最终运行配置。
+  #
+  # 当 TUI 审批通过额外目录访问时，也会把目录写回当前项目的
+  # .nocode/config.yaml -> workspace.additional_directories。
+
 permissions:
   # ── Human-in-the-loop 工具审批 ─────────────────
   enabled: true

@@ -135,6 +135,7 @@ class SandboxManager:
         (allow network-outbound ...) # 允许网络
         """
         config = cls._config
+        workspace_roots = cls._workspace_roots(cwd)
 
         lines = [
             "(version 1)",
@@ -143,10 +144,10 @@ class SandboxManager:
             "(allow process-fork)",  # 允许 fork 子进程
             "(allow signal)",  # 允许信号处理
             "(allow sysctl-read)",  # 允许读取系统信息
-            # 允许读取和写入工作区
-            f'(allow file-read* (subpath "{cwd}"))',
-            f'(allow file-write* (subpath "{cwd}"))',
         ]
+        for root in workspace_roots:
+            lines.append(f'(allow file-read* (subpath "{root}"))')
+            lines.append(f'(allow file-write* (subpath "{root}"))')
 
         # 系统目录（只读）
         system_dirs = ["/usr", "/lib", "/bin", "/sbin", "/System", "/Library"]
@@ -227,6 +228,7 @@ class SandboxManager:
         --unshare-all       隔离所有命名空间
         """
         config = cls._config
+        workspace_roots = cls._workspace_roots(cwd)
 
         args = [
             "bwrap",
@@ -236,14 +238,17 @@ class SandboxManager:
             "--ro-bind-try", "/lib64", "/lib64",  # 某些系统没有 lib64
             "--ro-bind", "/bin", "/bin",
             "--ro-bind-try", "/sbin", "/sbin",
-            # 工作区（可读写）
-            "--bind", str(cwd), str(cwd),
             # 设备和 proc
             "--dev", "/dev",
             "--proc", "/proc",
             # 临时目录
             "--bind", "/tmp", "/tmp",
         ]
+        for root in workspace_roots:
+            if root.exists():
+                args.extend(["--bind", str(root), str(root)])
+            else:
+                logger.warning("跳过不存在的授权目录，无法加入 Linux 沙箱: %s", root)
 
         # 用户缓存目录
         cache_dir = Path.home() / ".cache"
@@ -289,6 +294,20 @@ class SandboxManager:
         args.extend(["sh", "-c", command])
 
         return " ".join(args)
+
+    @classmethod
+    def _workspace_roots(cls, cwd: Path) -> list[Path]:
+        from nocode_agent.runtime.workspace import get_allowed_workspace_roots
+
+        roots: list[Path] = []
+        seen: set[Path] = set()
+        for root in (cwd.resolve(strict=False), *get_allowed_workspace_roots()):
+            resolved = root.resolve(strict=False)
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            roots.append(resolved)
+        return roots
 
 
 def init_sandbox() -> None:
