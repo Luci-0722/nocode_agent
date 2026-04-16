@@ -62,17 +62,18 @@ export default function Composer({ value, onChange, onSubmit, disabled = false }
   const lastSlashQueryRef = useRef('');
   const { stdin } = useStdin();
   const { stdout } = useStdout();
-  const { generating, generatingStartedAt } = useAppState();
+  const { generating, generatingStartedAt, permissionRequest, questionRequest } = useAppState();
+  const showGenerating = generating && !permissionRequest && !questionRequest;
 
   useEffect(() => {
-    if (!generating) {
+    if (!showGenerating) {
       return;
     }
     const timer = setInterval(() => {
       setTick((current) => current + 1);
     }, 80);
     return () => clearInterval(timer);
-  }, [generating]);
+  }, [showGenerating]);
 
   const activeSlashMenu = useMemo(() => getActiveSlashCommandMenu(value), [value]);
 
@@ -273,7 +274,7 @@ export default function Composer({ value, onChange, onSubmit, disabled = false }
     return lines;
   })();
 
-  const elapsedMs = generating && generatingStartedAt > 0 ? Date.now() - generatingStartedAt : 0;
+  const elapsedMs = showGenerating && generatingStartedAt > 0 ? Date.now() - generatingStartedAt : 0;
   const elapsedSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
   const spinnerFrame =
     GENERATING_SPINNER_FRAMES[Math.floor(elapsedMs / 80) % GENERATING_SPINNER_FRAMES.length] ||
@@ -285,7 +286,7 @@ export default function Composer({ value, onChange, onSubmit, disabled = false }
       {slashMenuLines.map((line, index) => (
         <Ansi key={`slash-${index}`}>{line}</Ansi>
       ))}
-      {generating && (
+      {showGenerating && (
         <Ansi>
           {truncate(
             `${COLOR.warning}${COLOR.bold}${spinnerFrame}${COLOR.reset} ${COLOR.bold}Generating${COLOR.reset} ${COLOR.secondary}(${formatDuration(elapsedSeconds)} • esc to interrupt)${COLOR.reset}`,

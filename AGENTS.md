@@ -193,6 +193,11 @@ PYTHONPATH=src python3 -m nocode_agent.app.backend_stdio
   正确做法：fatal 或异常退出时，TUI 保留错误摘要、最近 stderr 和日志文件路径。
   最小验证：构造一个故意失败的 backend，确认界面能看到 `fatal`、`最近 stderr` 和 `日志文件`。
 
+- [审批弹窗重绘] 错误现象：工具审批/提问弹窗出现后，界面整块不断向下复制，像在刷屏，Enter / Ctrl+C 看起来失效。
+  原因：审批等待期间如果仍保留 generating spinner 的定时刷新，Ink 会在 raw mode 下持续重绘；一旦弹窗让总高度超过可视区，就会表现成整屏向下滚动。
+  正确做法：审批或提问界面显示期间，暂停 spinner 和相关高频重绘；长内容优先截断或折叠，避免把终端高度撑爆。
+  最小验证：构造一个会触发 `permission_request` 的工具调用，确认弹窗出现后界面静止、方向键和 Enter 仍可正常选择。
+
 ## 开发流程
  1、开始编码前先与用户确认方案
  2、编码完成后提交一次commit
