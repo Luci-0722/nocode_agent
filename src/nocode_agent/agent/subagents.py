@@ -162,6 +162,11 @@ def _scan_markdown_dir(base_dir: Path) -> list[Path]:
         return []
 
 
+def _scan_builtin_agent_files() -> list[Path]:
+    builtin_dir = Path(__file__).resolve().parent.parent / "bundled_agents"
+    return _scan_markdown_dir(builtin_dir)
+
+
 def _scan_project_agent_files(cwd: Path) -> list[Path]:
     directories: list[Path] = []
     for parent in [cwd.resolve(), *cwd.resolve().parents]:
@@ -179,7 +184,7 @@ def _scan_user_agent_files() -> list[Path]:
     return _scan_markdown_dir(Path.home() / ".nocode" / "agents")
 
 
-def _build_custom_agent_definition(agent_md: Path, source: str) -> AgentDefinition | None:
+def _build_agent_definition(agent_md: Path, source: str) -> AgentDefinition | None:
     try:
         content = agent_md.read_text(encoding="utf-8")
     except OSError as exc:
@@ -231,18 +236,30 @@ def _build_custom_agent_definition(agent_md: Path, source: str) -> AgentDefiniti
     )
 
 
+def discover_builtin_agents() -> list[AgentDefinition]:
+    """发现随 nocode_agent 打包发布的内置子代理。"""
+    discovered: list[AgentDefinition] = []
+
+    for path in _scan_builtin_agent_files():
+        definition = _build_agent_definition(path, source="builtin")
+        if definition is not None:
+            discovered.append(definition)
+
+    return discovered
+
+
 def discover_custom_agents(cwd: Path | str) -> list[AgentDefinition]:
     """发现项目级和用户级自定义子代理。"""
     resolved_cwd = Path(cwd).resolve()
     discovered: list[AgentDefinition] = []
 
     for path in _scan_user_agent_files():
-        definition = _build_custom_agent_definition(path, source="user")
+        definition = _build_agent_definition(path, source="user")
         if definition is not None:
             discovered.append(definition)
 
     for path in _scan_project_agent_files(resolved_cwd):
-        definition = _build_custom_agent_definition(path, source="project")
+        definition = _build_agent_definition(path, source="project")
         if definition is not None:
             discovered.append(definition)
 
@@ -250,9 +267,10 @@ def discover_custom_agents(cwd: Path | str) -> list[AgentDefinition]:
 
 
 def init_agent_registry(cwd: Path | str) -> AgentRegistry:
-    """发现项目级与用户级子代理，并填充全局 registry。"""
+    """发现内置、用户级与项目级子代理，并填充全局 registry。"""
     global _AGENT_REGISTRY
     registry = AgentRegistry()
+    registry.register_many(discover_builtin_agents())
     registry.register_many(discover_custom_agents(cwd))
     _AGENT_REGISTRY = registry
     logger.info("Agent registry initialized: %d agents discovered", len(registry.all_agents()))
@@ -370,6 +388,7 @@ __all__ = [
     "build_readonly_tool_names",
     "decode_runtime_subagent_type",
     "describe_agent_tools",
+    "discover_builtin_agents",
     "discover_custom_agents",
     "encode_runtime_subagent_name",
     "get_agent_definition",

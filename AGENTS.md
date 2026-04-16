@@ -33,7 +33,7 @@
 - 默认配置模板是 `config.example.yaml`
 - 项目级配置默认读取 `<project>/.nocode/config.yaml`，全局兜底 `~/.nocode/config.yaml`
 - 运行时状态默认写入 `~/.nocode/projects/<project-hash>/`
-- subagent 统一从项目 `.nocode/agents/` 和用户 `~/.nocode/agents/` 发现；仓库默认 agent 也已经迁到项目 `.nocode/agents/`
+- subagent 统一从包内 `src/nocode_agent/bundled_agents/`、项目 `.nocode/agents/` 和用户 `~/.nocode/agents/` 发现
 
 ## 目录结构
 
@@ -52,6 +52,7 @@ src/nocode_agent/
   runtime/        运行时路径、bootstrap、交互控制
   skills/         skills 发现、注册、恢复
   tool/           内建工具实现
+  bundled_agents/ 仓库自带 subagent 定义
   bundled_skills/ 仓库自带 skills
 
 frontend/
@@ -61,7 +62,7 @@ frontend/
   hooks/                 Zustand 状态与 backend 通信
   types/                 前后端事件类型
 
-.nocode/agents/          项目级 subagent 定义（运行时发现，仓库默认 agent 也放这里）
+.nocode/agents/          项目级 subagent 定义（运行时发现，仅放项目自定义 / 覆盖定义）
 .nocode/config.yaml     项目级运行配置（默认查找位置）
 
 scripts/
@@ -127,6 +128,7 @@ PYTHONPATH=src python3 -m nocode_agent.app.backend_stdio
 - 涉及配置时，优先参考 `config.example.yaml`
 - 敏感信息不要写进仓库
 - 自定义 subagent 优先放在 `.nocode/agents/*.md`，frontmatter 最少包含 `name` 和 `description`
+- 内置 subagent 定义放在 `src/nocode_agent/bundled_agents/*.md`，不要混放到项目 `.nocode/agents/`
 - 自定义 subagent 如需限制能力，优先用 `tools` / `disallowedTools`，不要只靠 prompt 约束
 
 ### 测试提示

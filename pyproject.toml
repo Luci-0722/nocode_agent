@@ -35,6 +35,7 @@ include = ["nocode_agent*"]
 
 [tool.setuptools.package-data]
 nocode_agent = [
+  "bundled_agents/*.md",
   "bundled_skills/*/SKILL.md",
   "bundled_skills/*/references/*.md",
   "bundled_skills/*/templates/*.sh",

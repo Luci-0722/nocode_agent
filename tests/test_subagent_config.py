@@ -82,7 +82,44 @@ You are the project reviewer.
             self.assertEqual(agent.model, "project-model")
             self.assertIn("You are the project reviewer.", agent.get_system_prompt())
             self.assertIn("Notes:", agent.get_system_prompt())
-            self.assertIsNone(registry.get("general-purpose"))
+
+            builtin = registry.get("general-purpose")
+            self.assertIsNotNone(builtin)
+            assert builtin is not None
+            self.assertEqual(builtin.source, "builtin")
+            self.assertEqual(builtin.definition_path, REPO_ROOT / "src" / "nocode_agent" / "bundled_agents" / "general-purpose.md")
+
+    def test_project_agent_can_override_builtin_agent_definition(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            project_root = temp_root / "project"
+            subdir = project_root / "app"
+            project_agents = project_root / ".nocode" / "agents"
+
+            subdir.mkdir(parents=True)
+            project_agents.mkdir(parents=True)
+
+            (project_agents / "general-purpose.md").write_text(
+                """---
+name: general-purpose
+description: Project-specific general purpose agent
+tools: [read, write]
+---
+You are the project general-purpose agent.
+""",
+                encoding="utf-8",
+            )
+
+            registry = init_agent_registry(subdir)
+
+            agent = registry.get("general-purpose")
+            self.assertIsNotNone(agent)
+            assert agent is not None
+            self.assertEqual(agent.when_to_use, "Project-specific general purpose agent")
+            self.assertEqual(agent.source, "project")
+            self.assertEqual(agent.allowed_tools, ["read", "write"])
+            self.assertEqual(agent.definition_path, (project_agents / "general-purpose.md").resolve())
+            self.assertIn("You are the project general-purpose agent.", agent.get_system_prompt())
 
     def test_registry_requires_description_frontmatter_for_when_to_use(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
