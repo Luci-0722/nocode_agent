@@ -14,7 +14,7 @@ _FILE_UNCHANGED_STUB = (
 
 
 class ReadInput(BaseModel):
-    file_path: str = Field(description="工作区内的文件路径，支持相对路径。")
+    file_path: str = Field(description="工作区内的文件路径（无法读取目录），支持相对路径。")
     offset: int = Field(default=1, ge=1, description="起始行号，从 1 开始。")
     limit: int = Field(default=2000, ge=1, le=4000, description="最多读取多少行。")
 
