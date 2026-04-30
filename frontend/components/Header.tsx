@@ -15,7 +15,7 @@ export default function Header() {
   const modelDisplay = modelName ? `${modelName} (${model})` : model;
 
   const lines = [
-    `${COLOR.accent}${COLOR.bold}${LOGO[0]}${COLOR.reset}  ${COLOR.secondary}${truncate(`thread: ${threadId.slice(-8) || '--------'}`, rightWidth)}${COLOR.reset}`,
+    `${COLOR.accent}${COLOR.bold}${LOGO[0]}${COLOR.reset}  ${COLOR.secondary}${truncate(`thread: ${threadId?.slice(-8) || '--------'}`, rightWidth)}${COLOR.reset}`,
     `${COLOR.accent}${COLOR.bold}${LOGO[1]}${COLOR.reset}  ${COLOR.secondary}${truncate(`model: ${[modelDisplay, reasoningEffort].filter(Boolean).join(' ') || '-'}`, rightWidth)}${COLOR.reset}`,
     `${COLOR.accent}${COLOR.bold}${LOGO[2]}${COLOR.reset}  ${COLOR.secondary}${truncate(`cwd: ${tildePath(cwd || '-')}`, rightWidth)}${COLOR.reset}`,
   ];
