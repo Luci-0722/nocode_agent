@@ -214,7 +214,10 @@ PYTHONPATH=src python3 -m nocode_agent.app.backend_stdio
   正确做法：`src/nocode_agent/app/backend_stdio.py` 启动时先统一把 `stdin` / `stdout` / `stderr` 重配置到 UTF-8（`errors="replace"`），不要依赖 PowerShell 当前 code page。
   最小验证：在 Windows PowerShell 中发送包含 emoji 或 CJK 扩展字符的 prompt，确认界面持续流式输出，不出现 `gbk` 编码错误。
 
-## 开发流程
+## 注意要点
  1、开始编码前先与用户确认方案
- 2、编码完成后提交一次commit
- 3、特性最终开发完成后在fetures编写特性文档
+ 2、对于bug修复，原因没有定义清楚前不要开始改代码。
+ 3、编码完成后提交一次commit
+ 4、特性最终开发完成后在fetures编写特性文档
+ 5、本项目处于开发阶段，不要做兼容性更改，保持代码简介和注释丰富。
+ 6、不要做补丁式代码修改，而是要探究根本原因，从第一性原理出发解决问题。
