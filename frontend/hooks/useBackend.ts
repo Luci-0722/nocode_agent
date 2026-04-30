@@ -292,6 +292,19 @@ export function useBackend(config: BackendConfig = {}) {
           pushSystemMessage(`Retry ${event.attempt}/${event.max_retries}: ${event.message}`);
           break;
         case 'tool_start': {
+          // Flush any accumulated streaming text into a real message before adding the tool,
+          // so that assistant text appears above tool calls in chronological order.
+          const currentStreaming = useAppState.getState().streaming;
+          if (currentStreaming) {
+            addMessage({
+              id: nextMessageId('assistant', messageCounterRef),
+              kind: 'message',
+              role: 'assistant',
+              content: currentStreaming,
+              timestamp: Date.now(),
+            });
+            clearStreaming();
+          }
           const tool: ToolMessage = {
             id: nextMessageId('tool', messageCounterRef),
             kind: 'tool',

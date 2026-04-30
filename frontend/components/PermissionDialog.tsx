@@ -19,12 +19,6 @@ export default function PermissionDialog() {
     >
       <Text bold>{action.name}</Text>
       {action.description && <Text dimColor>{action.description}</Text>}
-      {action.args && (
-        <Box flexDirection="column" marginTop={1}>
-          <Text dimColor>args</Text>
-          <Text>{JSON.stringify(action.args, null, 2)}</Text>
-        </Box>
-      )}
       <Box marginTop={1}>
         <Text color={approveSelected ? 'green' : undefined}>{approveSelected ? '>' : ' '}</Text>
         <Text> Approve</Text>

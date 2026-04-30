@@ -453,6 +453,12 @@ class MainAgentRuntime:
                         await self._cancel_pending_task(next_chunk_task)
                         next_chunk_task = None
 
+                        if stream_iter is not None:
+                            try:
+                                await stream_iter.aclose()
+                            except Exception:
+                                pass
+
                         permission_event = tracker.build_permission_request_event(
                             request_id=request_id,
                             request=interrupt_request,
@@ -497,3 +503,8 @@ class MainAgentRuntime:
                 await asyncio.sleep(delay)
             finally:
                 await self._cancel_pending_task(next_chunk_task)
+                if stream_iter is not None:
+                    try:
+                        await stream_iter.aclose()
+                    except Exception:
+                        pass

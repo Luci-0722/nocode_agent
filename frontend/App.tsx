@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdin } from 'ink';
 import Composer from './components/Composer.js';
 import Header from './components/Header.js';
@@ -38,6 +38,7 @@ export default function App({ resume = false, model }: Props) {
   const { stdin } = useStdin();
   const backend = useBackend({ resume, model });
   const [input, setInput] = useState('');
+  const [queuedInput, setQueuedInput] = useState<string | null>(null);
 
   const {
     addMessage,
@@ -73,7 +74,7 @@ export default function App({ resume = false, model }: Props) {
   );
 
   const overlayActive = modelPickerOpen || threadPickerOpen || !!permissionRequest || !!questionRequest;
-  const composerDisabled = generating || overlayActive;
+  const composerDisabled = overlayActive;
 
   const cycleToolSelection = (direction: 1 | -1) => {
     if (selectableTools.length === 0) {
@@ -153,16 +154,29 @@ export default function App({ resume = false, model }: Props) {
   };
 
   const handleSubmit = (value: string) => {
-    if (!value.trim() || generating) {
+    if (!value.trim()) {
       return;
     }
     if (handleSlashCommand(value)) {
       setInput('');
       return;
     }
+    if (generating) {
+      setQueuedInput(value);
+      setInput('');
+      appendLocalSystem(`已排队，将在当前回复完成后发送: ${value}`);
+      return;
+    }
     backend.sendPrompt(value);
     setInput('');
   };
+
+  useEffect(() => {
+    if (!generating && queuedInput) {
+      backend.sendPrompt(queuedInput);
+      setQueuedInput(null);
+    }
+  }, [generating, queuedInput]);
 
   const submitPermissionRequest = (request: PermissionRequestState) => {
     backend.sendPermissionDecisions(request.requestId, request.decisions);
