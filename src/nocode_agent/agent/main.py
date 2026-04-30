@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 from uuid import uuid4
 
@@ -202,14 +203,18 @@ async def create_mainagent(
     ssl_verify: bool = True,
 ) -> MainAgent:
     """创建主代理和代码子代理。"""
+    total_started_at = perf_counter()
     logger.info(
         "Creating MainAgent: model=%s, base_url=%s, max_tokens=%d, temperature=%.2f, proxy=%s, no_proxy=%s, timeout=%.1fs, ssl_verify=%s",
         model, base_url, max_tokens, temperature, proxy or "(none)", ",".join(no_proxy or []) or "(none)", request_timeout, ssl_verify,
     )
     context_window = resolve_context_window(model)
     checkpointer = CheckpointerManager(resolve_checkpoint_path(persistence_config))
+    checkpointer_started_at = perf_counter()
     await checkpointer.ensure_setup()
     saver = checkpointer.get()
+    logger.info("MainAgent checkpointer ready in %.3fs", perf_counter() - checkpointer_started_at)
+    setup_started_at = perf_counter()
     setup_artifacts = build_mainagent_setup(
         api_key=api_key,
         model=model,
@@ -225,11 +230,13 @@ async def create_mainagent(
         request_timeout=request_timeout,
         ssl_verify=ssl_verify,
     )
+    logger.info("MainAgent setup artifacts built in %.3fs", perf_counter() - setup_started_at)
     resolved_thread_id = setup_artifacts.resolved_thread_id
     interactive_broker = setup_artifacts.interactive_broker
     middleware = setup_artifacts.middleware
     main_middleware = setup_artifacts.main_middleware
 
+    main_model_started_at = perf_counter()
     main_llm = build_model(
         api_key=api_key,
         model=model,
@@ -241,6 +248,8 @@ async def create_mainagent(
         request_timeout=request_timeout,
         ssl_verify=ssl_verify,
     )
+    logger.info("MainAgent main model client built in %.3fs", perf_counter() - main_model_started_at)
+    subagent_model_started_at = perf_counter()
     subagent_llm = build_model(
         api_key=api_key,
         model=subagent_model or model,
@@ -252,16 +261,19 @@ async def create_mainagent(
         request_timeout=request_timeout,
         ssl_verify=ssl_verify,
     )
+    logger.info("MainAgent subagent model client built in %.3fs", perf_counter() - subagent_model_started_at)
 
     core_tools = build_core_tools(interactive_broker.ask_user_question)
     readonly_tools = build_readonly_tools(interactive_broker.ask_user_question)
 
     # Skill system — DynamicPromptMiddleware 会在每次调用时刷新
     # 这里只做一次初始扫描，确保 invoke_skill 工具可用
+    registry_started_at = perf_counter()
     init_skill_registry(Path.cwd())
     init_agent_registry(Path.cwd())
     skill_tools = [invoke_skill]
     mcp_tools = await _load_mcp_tools(mcp_servers)
+    logger.info("MainAgent registries and MCP tools loaded in %.3fs", perf_counter() - registry_started_at)
     logger.info("Loaded %d MCP tools, %d core tools, %d skill tools", len(mcp_tools), len(core_tools), len(skill_tools))
 
     subagent_models: dict[str, Any] = {str(subagent_model or model): subagent_llm}
@@ -285,6 +297,7 @@ async def create_mainagent(
         return cached
 
     # ── 创建多类型子代理 ────────────────────────────────────
+    subagents_started_at = perf_counter()
     subagents_map = create_subagent_map(
         model=subagent_llm,
         core_tools=core_tools,
@@ -293,6 +306,7 @@ async def create_mainagent(
         middleware=middleware,
         resolve_model=_resolve_subagent_model,
     )
+    logger.info("MainAgent subagent map built in %.3fs", perf_counter() - subagents_started_at)
 
     tools = [
         *core_tools,
@@ -305,6 +319,7 @@ async def create_mainagent(
     dynamic_prompt_middleware = DynamicPromptMiddleware(Path.cwd())
     final_main_middleware = [dynamic_prompt_middleware, *main_middleware]
 
+    supervisor_started_at = perf_counter()
     agent = create_supervisor_agent(
         model=main_llm,
         tools=tools,
@@ -312,6 +327,7 @@ async def create_mainagent(
         middleware=final_main_middleware,
         system_prompt=None,  # 由 DynamicPromptMiddleware 动态注入
     )
+    logger.info("MainAgent supervisor graph created in %.3fs", perf_counter() - supervisor_started_at)
 
     reasoning_config = persistence_config.get("reasoning") if isinstance(persistence_config, dict) else {}
     reasoning_effort = str(
@@ -322,7 +338,12 @@ async def create_mainagent(
         )
     ).strip()
 
-    logger.info("MainAgent created: thread_id=%s, context_window=%d", resolved_thread_id, context_window)
+    logger.info(
+        "MainAgent created in %.3fs: thread_id=%s, context_window=%d",
+        perf_counter() - total_started_at,
+        resolved_thread_id,
+        context_window,
+    )
 
     return MainAgent(
         agent=agent,

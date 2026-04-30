@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware
@@ -47,40 +48,72 @@ class DynamicPromptMiddleware(AgentMiddleware):
     @override
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
         """每次模型调用前动态构建并注入 system prompt。"""
+        prompt_started_at = perf_counter()
         prompt = self._build_prompt()
+        logger.info(
+            "Dynamic prompt built in %.3fs (cwd=%s, chars=%d, cache=%s)",
+            perf_counter() - prompt_started_at,
+            self._cwd,
+            len(prompt),
+            "on" if self._use_cache else "off",
+        )
         new_system = SystemMessage(content=prompt)
         return await handler(request.override(system_message=new_system))
 
     def _build_prompt(self) -> str:
         """构建完整的 system prompt。"""
+        started_at = perf_counter()
         static = get_static_prompt()
+        static_elapsed = perf_counter() - started_at
+        dynamic_started_at = perf_counter()
         dynamic = self._build_dynamic_prompt()
-        return static + "\n\n" + dynamic
+        prompt = static + "\n\n" + dynamic
+        logger.debug(
+            "DynamicPromptMiddleware._build_prompt timings: static=%.3fs dynamic=%.3fs total=%.3fs",
+            static_elapsed,
+            perf_counter() - dynamic_started_at,
+            perf_counter() - started_at,
+        )
+        return prompt
 
     def _build_dynamic_prompt(self) -> str:
         """构建动态部分：环境、指令文件、subagents、skills。"""
         from .context import build_environment_section, discover_instruction_files, render_instruction_files
 
+        started_at = perf_counter()
         sections = [build_environment_section(self._cwd)]
 
         # 实时读取指令文件
+        files_started_at = perf_counter()
         if self._use_cache:
             files = self._discover_instruction_files_cached()
         else:
             files = discover_instruction_files(self._cwd)
+        files_elapsed = perf_counter() - files_started_at
 
         if files:
             sections.append(render_instruction_files(files))
 
+        agent_listing_started_at = perf_counter()
         agent_listing = build_agent_listing_section()
+        agent_listing_elapsed = perf_counter() - agent_listing_started_at
         if agent_listing:
             sections.append(agent_listing)
 
         # 实时扫描 skills
+        skills_started_at = perf_counter()
         skills_section = self._build_skills_section()
+        skills_elapsed = perf_counter() - skills_started_at
         if skills_section:
             sections.append(skills_section)
 
+        logger.debug(
+            "DynamicPromptMiddleware._build_dynamic_prompt timings: files=%.3fs skills=%.3fs agents=%.3fs total=%.3fs",
+            files_elapsed,
+            skills_elapsed,
+            agent_listing_elapsed,
+            perf_counter() - started_at,
+        )
         return "\n\n".join(sections)
 
     def _discover_instruction_files_cached(self) -> list[Any]:

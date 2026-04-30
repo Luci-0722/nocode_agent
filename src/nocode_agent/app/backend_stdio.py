@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import sys
+from time import perf_counter
 from typing import Any
 
 from nocode_agent.persistence import (
@@ -67,11 +68,19 @@ async def _build_agent(
     thread_id: str | None = None,
     model_name: str | None = None,
 ):
-    return await create_agent_from_config(
+    started_at = perf_counter()
+    agent = await create_agent_from_config(
         config,
         thread_id=thread_id or os.environ.get("NOCODE_THREAD_ID") or None,
         model_name=model_name,
     )
+    logger.info(
+        "Backend agent constructed in %.3fs: thread=%s model_name=%s",
+        perf_counter() - started_at,
+        getattr(agent, "thread_id", "-"),
+        model_name or "",
+    )
+    return agent
 
 
 def _emit(event: dict[str, Any]) -> None:
@@ -265,12 +274,26 @@ async def _handle_message(agent, payload: dict[str, Any], config: dict[str, Any]
 
 async def main() -> int:
     global _stream_task, _current_model_name
+    startup_started_at = perf_counter()
     configure_stdio_encoding()
     try:
+        config_started_at = perf_counter()
         config = load_runtime_config()
+        config_elapsed = perf_counter() - config_started_at
         configure_runtime_logging(config)
+        logger.info("Backend runtime config loaded in %.3fs", config_elapsed)
+
+        model_name_started_at = perf_counter()
         _current_model_name = _resolve_initial_model_name(config) or str(config.get("default_model", "") or "").strip()
+        logger.info(
+            "Backend initial model resolved in %.3fs: model_name=%s",
+            perf_counter() - model_name_started_at,
+            _current_model_name,
+        )
+
+        build_started_at = perf_counter()
         agent = await _build_agent(config, model_name=_current_model_name or None)
+        logger.info("Backend create_agent_from_config finished in %.3fs", perf_counter() - build_started_at)
         if _current_model_name:
             save_global_default_model(_current_model_name)
     except Exception as error:
@@ -280,6 +303,11 @@ async def main() -> int:
         return 1
 
     _emit(_build_status_event(agent, config, event_type="hello"))
+    logger.info(
+        "Backend startup complete in %.3fs: thread=%s",
+        perf_counter() - startup_started_at,
+        getattr(agent, "thread_id", "-"),
+    )
     while True:
         line = await asyncio.to_thread(sys.stdin.readline)
         if not line:
