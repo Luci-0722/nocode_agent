@@ -13,7 +13,7 @@ Examples:
     --project-id refactor \
     --task-id 2026-04-12-refactor \
     --max-iterations 5 \
-    -- codex exec "Continue the long task and end with STATUS lines."
+    -- codex --yolo exec "Continue the long task and end with STATUS lines."
 
 Options:
   --task-dir <path>            Required. Task workspace directory.
