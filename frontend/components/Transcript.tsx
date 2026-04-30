@@ -108,7 +108,7 @@ export default function Transcript() {
     : -1;
 
   let start = Math.max(0, renderedRows.length - visibleCount - clampedOffset);
-  if (selectedRowIndex >= 0) {
+  if (selectedRowIndex >= 0 && clampedOffset > 0) {
     const end = start + visibleCount;
     if (selectedRowIndex < start) {
       start = selectedRowIndex;
