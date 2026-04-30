@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type {
   PermissionAction,
+  ProviderFetchResult,
+  ProviderModel,
   Question,
   SubagentRun,
   ThreadInfo,
@@ -31,6 +33,14 @@ export interface ToolMessage {
 }
 
 export type Message = TextMessage | ToolMessage;
+
+export interface DisplayRow {
+  kind: 'header' | 'model';
+  provider_name: string;
+  model_id?: string;
+  display_name?: string;
+  qualified_name?: string;
+}
 
 export interface ModelOption {
   name: string;
@@ -79,6 +89,9 @@ export interface AppState {
   modelOptions: ModelOption[];
   modelPickerOpen: boolean;
   modelPickerIndex: number;
+  displayRows: DisplayRow[];
+  providerFetchResults: Record<string, ProviderFetchResult>;
+  modelFetchLoading: boolean;
   threads: ThreadInfo[];
   threadPickerOpen: boolean;
   threadPickerIndex: number;
@@ -98,6 +111,10 @@ export interface AppState {
   openModelPicker: (models: ModelOption[], selectedName?: string) => void;
   closeModelPicker: () => void;
   moveModelPicker: (delta: number) => void;
+  openModelPickerFromCache: (cache: Record<string, ProviderModel[]>, current: string, defaultModel: string, fetchResults: Record<string, ProviderFetchResult>) => void;
+  updateProviderFetch: (result: ProviderFetchResult) => void;
+  setModelFetchLoading: (loading: boolean) => void;
+  resetProviderFetchResults: (providers: string[]) => void;
   openThreadPicker: (threads: ThreadInfo[]) => void;
   closeThreadPicker: () => void;
   moveThreadPicker: (delta: number) => void;
@@ -128,6 +145,9 @@ export const useAppState = create<AppState>((set) => ({
   modelOptions: [],
   modelPickerOpen: false,
   modelPickerIndex: 0,
+  displayRows: [],
+  providerFetchResults: {},
+  modelFetchLoading: false,
   threads: [],
   threadPickerOpen: false,
   threadPickerIndex: 0,
@@ -175,12 +195,70 @@ export const useAppState = create<AppState>((set) => ({
     }),
   closeModelPicker: () => set({ modelPickerOpen: false, modelOptions: [], modelPickerIndex: 0 }),
   moveModelPicker: (delta) =>
+    set((state) => {
+      const rows = state.displayRows;
+      if (rows.length === 0) return { modelPickerIndex: 0 };
+
+      // Find next selectable (model) row
+      let next = state.modelPickerIndex;
+      const direction = delta > 0 ? 1 : -1;
+      for (let i = 0; i < rows.length; i++) {
+        next = next + direction;
+        if (next >= rows.length) next = 0;
+        if (next < 0) next = rows.length - 1;
+        if (rows[next].kind === 'model') break;
+      }
+      return { modelPickerIndex: next };
+    }),
+  openModelPickerFromCache: (cache, current, defaultModel, fetchResults) =>
+    set(() => {
+      const rows: DisplayRow[] = [];
+      const sortedProviders = Object.keys(cache).sort();
+
+      for (const provider of sortedProviders) {
+        rows.push({ kind: 'header', provider_name: provider });
+        const result = fetchResults[provider];
+        if (!result || result.status === 'error') continue;
+        const models = cache[provider] || [];
+        for (const model of models) {
+          rows.push({
+            kind: 'model',
+            provider_name: provider,
+            model_id: model.id,
+            display_name: model.display_name || model.id,
+            qualified_name: `${provider}/${model.id}`,
+          });
+        }
+      }
+
+      // Find current model in rows
+      const currentIdx = rows.findIndex(
+        (r) => r.kind === 'model' && r.qualified_name === current,
+      );
+      // If current not found, select first selectable row
+      const firstSelectable = rows.findIndex((r) => r.kind === 'model');
+      const index = currentIdx >= 0 ? currentIdx : Math.max(0, firstSelectable);
+
+      return {
+        displayRows: rows,
+        modelPickerOpen: true,
+        modelPickerIndex: index,
+        providerFetchResults: fetchResults,
+      };
+    }),
+  updateProviderFetch: (result) =>
     set((state) => ({
-      modelPickerIndex:
-        state.modelOptions.length === 0
-          ? 0
-          : Math.max(0, Math.min(state.modelOptions.length - 1, state.modelPickerIndex + delta)),
+      providerFetchResults: { ...state.providerFetchResults, [result.provider_name]: result },
     })),
+  setModelFetchLoading: (loading) => set({ modelFetchLoading: loading }),
+  resetProviderFetchResults: (providers) =>
+    set(() => {
+      const results: Record<string, ProviderFetchResult> = {};
+      for (const p of providers) {
+        results[p] = { provider_name: p, status: 'loaded', models: [], error: null };
+      }
+      return { providerFetchResults: results };
+    }),
   openThreadPicker: (threads) => set({ threads, threadPickerOpen: true, threadPickerIndex: 0 }),
   closeThreadPicker: () => set({ threadPickerOpen: false, threads: [], threadPickerIndex: 0 }),
   moveThreadPicker: (delta) =>

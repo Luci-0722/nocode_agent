@@ -132,6 +132,10 @@ export function useBackend(config: BackendConfig = {}) {
   const setStreaming = useAppState((state) => state.setStreaming);
   const setTranscriptScroll = useAppState((state) => state.setTranscriptScroll);
   const openModelPicker = useAppState((state) => state.openModelPicker);
+  const openModelPickerFromCache = useAppState((state) => state.openModelPickerFromCache);
+  const updateProviderFetch = useAppState((state) => state.updateProviderFetch);
+  const setModelFetchLoading = useAppState((state) => state.setModelFetchLoading);
+  const resetProviderFetchResults = useAppState((state) => state.resetProviderFetchResults);
   const openThreadPicker = useAppState((state) => state.openThreadPicker);
   const resetConversation = useAppState((state) => state.resetConversation);
 
@@ -528,8 +532,16 @@ export function useBackend(config: BackendConfig = {}) {
         case 'history':
           handleHistory(event.messages);
           break;
-        case 'model_list':
-          openModelPicker(event.models, event.current);
+        case 'models_fetch_start':
+          setModelFetchLoading(true);
+          resetProviderFetchResults(event.providers);
+          break;
+        case 'models_fetch_provider':
+          updateProviderFetch(event.result);
+          break;
+        case 'models_fetch_done':
+          setModelFetchLoading(false);
+          openModelPickerFromCache(event.cache, event.current, event.default, useAppState.getState().providerFetchResults);
           break;
         case 'model_switched':
           setStatus({ modelName: event.model_name, model: event.model });
@@ -547,7 +559,11 @@ export function useBackend(config: BackendConfig = {}) {
       finalizeStreaming,
       handleHistory,
       openModelPicker,
+      openModelPickerFromCache,
       openThreadPicker,
+      updateProviderFetch,
+      setModelFetchLoading,
+      resetProviderFetchResults,
       permissionPreference,
       pushSystemMessage,
       resetConversation,
@@ -673,8 +689,12 @@ export function useBackend(config: BackendConfig = {}) {
     [send],
   );
 
-  const listModels = useCallback(() => {
-    send({ type: 'list_models' });
+  const fetchModels = useCallback(() => {
+    send({ type: 'fetch_models' });
+  }, [send]);
+
+  const refreshModels = useCallback(() => {
+    send({ type: 'fetch_models', force: true });
   }, [send]);
 
   const switchModel = useCallback(
@@ -715,7 +735,8 @@ export function useBackend(config: BackendConfig = {}) {
     sendPrompt,
     sendQuestionAnswer,
     sendPermissionDecisions,
-    listModels,
+    fetchModels,
+    refreshModels,
     switchModel,
     listThreads,
     resumeThread,

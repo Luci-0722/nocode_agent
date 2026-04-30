@@ -139,5 +139,19 @@ export type BackendEvent =
   | { type: 'queued_prompt_injected'; texts: string[] }
   | { type: 'thread_list'; threads: ThreadInfo[] }
   | { type: 'history'; messages: HistoryEntry[] }
-  | { type: 'model_list'; models: { name: string; model: string; is_default: string }[]; current: string; default: string }
+  | { type: 'models_fetch_start'; providers: string[] }
+  | { type: 'models_fetch_provider'; result: ProviderFetchResult }
+  | { type: 'models_fetch_done'; cache: Record<string, ProviderModel[]>; current: string; default: string }
   | { type: 'model_switched'; model_name: string; model: string };
+
+export interface ProviderModel {
+  id: string;
+  display_name: string;
+}
+
+export interface ProviderFetchResult {
+  provider_name: string;
+  status: 'loaded' | 'error';
+  models: ProviderModel[];
+  error: string | null;
+}

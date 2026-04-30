@@ -34,8 +34,8 @@ export const SLASH_COMMANDS: SlashCommandDefinition[] = [
   {
     action: 'models',
     name: 'models',
-    description: '列出或切换模型配置',
-    argumentHint: '[model-name]',
+    description: '浏览并切换模型',
+    argumentHint: '[provider/model-id]',
     acceptsArgs: true,
   },
   {

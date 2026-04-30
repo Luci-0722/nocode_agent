@@ -149,7 +149,7 @@ class ToolKitSecurityTest(unittest.TestCase):
             extra_dir.mkdir()
             global_config.parent.mkdir(parents=True)
             global_config.write_text(
-                "default_model: global\nmodels:\n  global:\n    model: test-model\n",
+                "default_model: global/test-model\nproviders:\n  global:\n    base_url: 'http://127.0.0.1:11434/v1'\n",
                 encoding="utf-8",
             )
 
@@ -162,7 +162,7 @@ class ToolKitSecurityTest(unittest.TestCase):
                 self.assertEqual(persisted, (extra_dir.resolve(),))
                 self.assertEqual(kit._resolve_path(str(extra_dir / "data.txt")), (extra_dir / "data.txt").resolve())
                 self.assertTrue(project_config.exists())
-                self.assertEqual(load_config().get("default_model"), "global")
+                self.assertEqual(load_config().get("default_model"), "global/test-model")
 
             payload = project_config.read_text(encoding="utf-8")
             self.assertIn("workspace:", payload)

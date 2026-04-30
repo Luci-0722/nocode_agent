@@ -324,39 +324,16 @@ def resolve_request_timeout(config: dict[str, Any], default: float = 90.0) -> fl
     return timeout
 
 
-def list_available_models(config: dict[str, Any]) -> list[dict[str, str]]:
-    """列出配置中所有可用的模型，返回包含名称和实际 model ID 的列表。
+def parse_model_name(model_name: str) -> tuple[str, str]:
+    """解析 "provider/model_id" 格式的模型名称。
 
-    返回格式: [{"name": "qwen", "model": "glm-5", "is_default": true}, {"name": "qwen/glm-4-flash", "model": "glm-4-flash", "is_default": false}]
+    Returns:
+        (provider_name, model_id) 元组
     """
-    models_section = config.get("models", {})
-    if not isinstance(models_section, dict):
-        return []
-
-    default_name = str(config.get("default_model", "") or "").strip()
-    result: list[dict[str, str]] = []
-    for cfg_name, cfg in models_section.items():
-        if not isinstance(cfg, dict):
-            continue
-        default_model_id = cfg.get("model", "")
-        if default_model_id:
-            result.append({
-                "name": cfg_name,
-                "model": default_model_id,
-                "is_default": "true" if cfg_name == default_name else "false",
-            })
-        # 添加 variants
-        variants = cfg.get("variants", [])
-        if isinstance(variants, list):
-            for variant_id in variants:
-                if variant_id and str(variant_id) != default_model_id:
-                    variant_name = f"{cfg_name}/{variant_id}"
-                    result.append({
-                        "name": variant_name,
-                        "model": str(variant_id),
-                        "is_default": "true" if variant_name == default_name else "false",
-                    })
-    return result
+    parts = str(model_name or "").strip().split("/", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise ValueError(f"model_name must be 'provider/model_id', got '{model_name}'")
+    return parts[0], parts[1]
 
 
 def resolve_model_config(config: dict[str, Any], model_name: str | None = None) -> dict[str, Any]:
@@ -364,45 +341,33 @@ def resolve_model_config(config: dict[str, Any], model_name: str | None = None) 
 
     Args:
         config: 完整配置字典
-        model_name: 模型名称（对应 models 段的 key，或 "key/variant_id" 格式）
+        model_name: 模型名称，格式为 "provider/model_id"。
                     为 None 时使用 default_model
 
     Returns:
         包含 model, base_url, api_key 等字段的配置字典
     """
-    models_section = config.get("models", {})
-    if not isinstance(models_section, dict):
-        models_section = {}
+    providers_section = config.get("providers", {})
+    if not isinstance(providers_section, dict):
+        providers_section = {}
 
-    target_name = model_name or config.get("default_model")
-    if not target_name:
+    target = model_name or config.get("default_model")
+    if not target:
         raise ValueError("No model specified and no default_model configured")
 
-    # 解析名称：可能是 "qwen" 或 "qwen/glm-4-flash"
-    parts = target_name.split("/", 1)
-    cfg_name = parts[0]
-    variant_id = parts[1] if len(parts) > 1 else None
+    provider_name, model_id = parse_model_name(str(target))
 
-    if cfg_name not in models_section:
-        raise ValueError(f"Model config '{cfg_name}' not found in models configuration")
+    if provider_name not in providers_section:
+        raise ValueError(f"Provider '{provider_name}' not found in providers configuration")
 
-    model_cfg = models_section[cfg_name]
-    if not isinstance(model_cfg, dict):
-        raise ValueError(f"models.{cfg_name} must be a dict")
-
-    # 确定实际使用的 model ID
-    if variant_id:
-        actual_model = variant_id
-    else:
-        actual_model = model_cfg.get("model", "")
-
-    if not actual_model:
-        raise ValueError(f"No model ID specified for '{target_name}'")
+    provider_cfg = providers_section[provider_name]
+    if not isinstance(provider_cfg, dict):
+        raise ValueError(f"providers.{provider_name} must be a dict")
 
     return {
-        "model": actual_model,
-        "base_url": model_cfg.get("base_url", ""),
-        "api_key": model_cfg.get("api_key", ""),
+        "model": model_id,
+        "base_url": provider_cfg.get("base_url", ""),
+        "api_key": provider_cfg.get("api_key", ""),
     }
 
 
@@ -418,6 +383,6 @@ __all__ = [
     "resolve_no_proxy",
     "resolve_proxy",
     "resolve_request_timeout",
-    "list_available_models",
+    "parse_model_name",
     "resolve_model_config",
 ]

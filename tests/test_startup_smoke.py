@@ -200,13 +200,12 @@ class BackendStartupSmokeTest(unittest.TestCase):
             config_path.write_text(
                 textwrap.dedent(
                     """\
-                    default_model: qwen
+                    default_model: qwen/qwen2.5-coder:14b
                     max_tokens: 256
                     temperature: 0.1
                     subagent_model: qwen2.5-coder:14b
-                    models:
+                    providers:
                       qwen:
-                        model: qwen2.5-coder:14b
                         base_url: "http://127.0.0.1:11434/v1"
                     auto_compact:
                       enabled: true
@@ -443,13 +442,12 @@ class TuiBackendErrorVisibilityTest(unittest.TestCase):
             config_path.write_text(
                 textwrap.dedent(
                     """\
-                    default_model: qwen
+                    default_model: qwen/glm-5
                     max_tokens: 256
                     temperature: 0.1
                     subagent_model: glm-5
-                    models:
+                    providers:
                       qwen:
-                        model: glm-5
                         base_url: "http://127.0.0.1:11434/v1"
                     """
                 ),

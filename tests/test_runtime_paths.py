@@ -140,7 +140,7 @@ class RuntimePathsTest(unittest.TestCase):
             extra_dir.mkdir()
             global_config.parent.mkdir(parents=True)
             global_config.write_text(
-                "default_model: global\nmodels:\n  global:\n    model: test-model\n",
+                "default_model: global/test-model\nproviders:\n  global:\n    base_url: 'http://127.0.0.1:11434/v1'\n",
                 encoding="utf-8",
             )
             project_config.parent.mkdir(parents=True)
@@ -153,8 +153,8 @@ class RuntimePathsTest(unittest.TestCase):
                 with patch("pathlib.Path.cwd", return_value=cwd):
                     config = load_config()
 
-            self.assertEqual(config.get("default_model"), "global")
-            self.assertEqual(config.get("models", {}).get("global", {}).get("model"), "test-model")
+            self.assertEqual(config.get("default_model"), "global/test-model")
+            self.assertEqual(config.get("providers", {}).get("global", {}).get("base_url"), "http://127.0.0.1:11434/v1")
             self.assertEqual(
                 config.get("workspace", {}).get("additional_directories"),
                 [str(extra_dir)],

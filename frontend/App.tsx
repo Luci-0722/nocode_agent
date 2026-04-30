@@ -12,7 +12,7 @@ import { useAppState } from './hooks/useAppState.js';
 import { useBackend } from './hooks/useBackend.js';
 import { isPrintableInput, normalizePastedText } from './input.js';
 import { buildSlashCommandHelpText } from './slashCommands.js';
-import type { ModelOption, PermissionRequestState, QuestionRequestState } from './hooks/useAppState.js';
+import type { PermissionRequestState, QuestionRequestState } from './hooks/useAppState.js';
 import type { ThreadInfo } from './types/events.js';
 
 interface Props {
@@ -41,7 +41,7 @@ export default function App({ resume = false, model }: Props) {
     addMessage,
     generating,
     messages,
-    modelOptions,
+    displayRows,
     modelPickerIndex,
     modelPickerOpen,
     permissionPreference,
@@ -130,7 +130,7 @@ export default function App({ resume = false, model }: Props) {
         if (arg) {
           backend.switchModel(arg);
         } else {
-          backend.listModels();
+          backend.fetchModels();
         }
         return true;
       case 'cancel':
@@ -203,12 +203,12 @@ export default function App({ resume = false, model }: Props) {
     setPermissionRequest(null);
   };
 
-  const selectCurrentModel = (options: ModelOption[], index: number) => {
-    const selected = options[index];
-    if (!selected) {
+  const selectCurrentModel = (rows: typeof displayRows, index: number) => {
+    const selected = rows[index];
+    if (!selected || selected.kind !== 'model' || !selected.qualified_name) {
       return;
     }
-    backend.switchModel(selected.name);
+    backend.switchModel(selected.qualified_name);
     closeModelPicker();
   };
 
@@ -280,8 +280,12 @@ export default function App({ resume = false, model }: Props) {
         moveModelPicker(1);
         return;
       }
+      if (key.ctrl && keyInput === 'r') {
+        backend.refreshModels();
+        return;
+      }
       if (key.return) {
-        selectCurrentModel(modelOptions, modelPickerIndex);
+        selectCurrentModel(displayRows, modelPickerIndex);
       }
       return;
     }

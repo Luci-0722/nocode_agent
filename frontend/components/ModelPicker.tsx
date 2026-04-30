@@ -4,23 +4,50 @@ import DialogFrame from './DialogFrame.js';
 import { useAppState } from '../hooks/useAppState.js';
 
 export default function ModelPicker() {
-  const { modelName, modelOptions, modelPickerIndex } = useAppState();
+  const {
+    displayRows,
+    modelPickerIndex,
+    modelName,
+    providerFetchResults,
+  } = useAppState();
+
+  if (displayRows.length === 0) {
+    return (
+      <DialogFrame title="Models" subtitle="Up/Down move, Enter select, Ctrl+R refresh, Esc close">
+        <Text dimColor>No providers configured.</Text>
+      </DialogFrame>
+    );
+  }
 
   return (
-    <DialogFrame title="Model Picker" subtitle="Up/Down move, Enter select, Esc close">
-      {modelOptions.length === 0 && <Text dimColor>No models available.</Text>}
-      {modelOptions.map((option, index) => {
+    <DialogFrame title="Models" subtitle="Up/Down move, Enter select, Ctrl+R refresh, Esc close">
+      {displayRows.map((row, index) => {
+        if (row.kind === 'header') {
+          const result = providerFetchResults[row.provider_name];
+          const status = result?.status;
+          const hasError = status === 'error';
+          const errorMsg = result?.error;
+
+          return (
+            <Box key={`h-${row.provider_name}`} flexDirection="column">
+              <Box>
+                <Text bold dimColor>{row.provider_name}</Text>
+                {hasError && <Text color="red"> {`(${errorMsg || 'error'})`}</Text>}
+              </Box>
+            </Box>
+          );
+        }
+
+        // Model row
         const selected = index === modelPickerIndex;
-        const isCurrent = option.name === modelName;
-        const isDefault = option.is_default === 'true';
+        const isCurrent = row.qualified_name === modelName;
+
         return (
-          <Box key={option.name}>
+          <Box key={row.qualified_name}>
             <Text color={selected ? 'green' : undefined}>{selected ? '>' : ' '}</Text>
             <Text> </Text>
-            <Text bold={selected}>{option.name}</Text>
-            <Text dimColor>{` (${option.model})`}</Text>
+            <Text bold={selected}>{row.display_name || row.model_id}</Text>
             {isCurrent && <Text color="green"> current</Text>}
-            {isDefault && <Text color="yellow"> default</Text>}
           </Box>
         );
       })}

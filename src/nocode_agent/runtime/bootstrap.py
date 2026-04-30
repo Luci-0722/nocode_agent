@@ -16,7 +16,6 @@ from nocode_agent.config import (
     resolve_proxy,
     resolve_request_timeout,
     resolve_ssl_verify,
-    list_available_models,
     resolve_model_config,
 )
 from nocode_agent.log import setup_logging

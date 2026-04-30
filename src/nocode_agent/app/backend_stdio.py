@@ -16,8 +16,8 @@ from nocode_agent.persistence import (
     resolve_checkpoint_path,
 )
 from nocode_agent.config import (
-    list_available_models,
     load_global_config,
+    parse_model_name,
     resolve_model_config,
     save_global_default_model,
 )
@@ -32,33 +32,43 @@ from nocode_agent.tool.kit import _sanitize_text
 logger = logging.getLogger(__name__)
 
 _stream_task: asyncio.Task | None = None
-_current_model_name: str = ""  # 当前使用的模型名称（对应 models 段的 key）
+_current_model: str = ""  # "provider/model_id" format
+_model_cache: dict[str, list[dict[str, str]]] = {}  # provider_name -> [{"id", "display_name"}]
+_cache_populated: bool = False
 
 
 def _resolve_initial_model_name(config: dict[str, Any]) -> str:
-    available_names = {
-        str(model.get("name", "") or "").strip()
-        for model in list_available_models(config)
-        if str(model.get("name", "") or "").strip()
-    }
+    providers = config.get("providers", {})
+    if not isinstance(providers, dict) or not providers:
+        raise ValueError("No providers configured")
 
-    explicit_model = str(os.environ.get("NOCODE_MODEL_NAME", "") or "").strip()
-    if explicit_model:
-        if explicit_model in available_names:
-            return explicit_model
-        logger.warning("Ignoring invalid NOCODE_MODEL_NAME=%s", explicit_model)
+    candidates: list[tuple[str, str]] = []
 
-    global_default_model = str(load_global_config().get("default_model", "") or "").strip()
-    if global_default_model:
-        if global_default_model in available_names:
-            return global_default_model
-        logger.warning("Ignoring invalid ~/.nocode/config.yaml default_model=%s", global_default_model)
+    explicit = str(os.environ.get("NOCODE_MODEL_NAME", "") or "").strip()
+    if explicit:
+        candidates.append(("NOCODE_MODEL_NAME", explicit))
 
-    default_model = str(config.get("default_model", "") or "").strip()
-    if default_model:
-        return default_model
+    global_default = str(load_global_config().get("default_model", "") or "").strip()
+    if global_default:
+        candidates.append(("global_config", global_default))
 
-    return next(iter(available_names), "")
+    project_default = str(config.get("default_model", "") or "").strip()
+    if project_default:
+        candidates.append(("project_config", project_default))
+
+    for source, candidate in candidates:
+        try:
+            provider_name, _ = parse_model_name(candidate)
+        except ValueError:
+            logger.warning("Ignoring invalid %s=%s", source, candidate)
+            continue
+        if provider_name in providers:
+            return candidate
+        logger.warning("Ignoring %s=%s: provider '%s' not found", source, candidate, provider_name)
+
+    # Fall back to first provider — model_id will be wrong but agent starts
+    first_provider = next(iter(providers))
+    return f"{first_provider}/unknown"
 
 
 async def _build_agent(
@@ -90,7 +100,7 @@ def _build_status_event(agent, config: dict[str, Any], event_type: str = "status
         "type": event_type,
         "thread_id": agent.thread_id,
         "model": agent.model_name,
-        "model_name": _current_model_name,  # 模型配置名称
+        "model_name": _current_model,  # "provider/model_id" qualified name
         "subagent_model": agent.subagent_model_name,
         "reasoning_effort": getattr(agent, "reasoning_effort", ""),
         "cwd": os.getcwd(),
@@ -172,7 +182,7 @@ async def _stream_prompt(agent, prompt: str, config: dict[str, Any]) -> None:
 
 
 async def _handle_message(agent, payload: dict[str, Any], config: dict[str, Any]) -> tuple[Any, bool]:
-    global _current_model_name, _last_tokens_left_percent, _stream_task
+    global _current_model, _last_tokens_left_percent, _stream_task
     message_type = payload.get("type")
 
     if message_type == "clear":
@@ -184,14 +194,87 @@ async def _handle_message(agent, payload: dict[str, Any], config: dict[str, Any]
         _emit(_build_status_event(agent, config))
         return agent, True
 
-    if message_type == "list_models":
-        models = list_available_models(config)
-        default_model = config.get("default_model", "")
+    if message_type == "fetch_models":
+        force_refresh = bool(payload.get("force", False))
+        from nocode_agent.model.fetch_models import fetch_models_for_provider
+        from nocode_agent.config import resolve_api_key, resolve_proxy, resolve_ssl_verify
+
+        if _cache_populated and not force_refresh:
+            _emit({
+                "type": "models_fetch_start",
+                "providers": list(_model_cache.keys()),
+            })
+            for pname, models in _model_cache.items():
+                _emit({
+                    "type": "models_fetch_provider",
+                    "result": {
+                        "provider_name": pname,
+                        "status": "loaded",
+                        "models": models,
+                        "error": None,
+                    },
+                })
+            _emit({
+                "type": "models_fetch_done",
+                "cache": _model_cache,
+                "current": _current_model,
+                "default": config.get("default_model", ""),
+            })
+            return agent, True
+
+        providers = config.get("providers", {})
+        if not isinstance(providers, dict) or not providers:
+            _emit({"type": "error", "message": "No providers configured"})
+            return agent, True
+
+        provider_names = list(providers.keys())
+        _emit({"type": "models_fetch_start", "providers": provider_names})
+
+        proxy = resolve_proxy(config)
+        ssl_verify = resolve_ssl_verify(config)
+
+        async def _fetch_one(pname: str, pcfg: dict) -> None:
+            try:
+                synthetic = {"base_url": pcfg.get("base_url", ""), "api_key": pcfg.get("api_key", "")}
+                api_key = resolve_api_key(synthetic)
+                models = await fetch_models_for_provider(
+                    pname,
+                    pcfg.get("base_url", ""),
+                    api_key,
+                    proxy=proxy,
+                    ssl_verify=ssl_verify,
+                )
+                _model_cache[pname] = models
+                _emit({
+                    "type": "models_fetch_provider",
+                    "result": {
+                        "provider_name": pname,
+                        "status": "loaded",
+                        "models": models,
+                        "error": None,
+                    },
+                })
+            except Exception as exc:
+                logger.warning("Failed to fetch models for %s: %s", pname, exc)
+                _model_cache[pname] = []
+                _emit({
+                    "type": "models_fetch_provider",
+                    "result": {
+                        "provider_name": pname,
+                        "status": "error",
+                        "models": [],
+                        "error": str(exc),
+                    },
+                })
+
+        await asyncio.gather(*(_fetch_one(pn, providers[pn]) for pn in provider_names))
+        _cache_populated = True
+
         _emit({
-            "type": "model_list",
-            "models": models,
-            "current": _current_model_name,
-            "default": default_model,
+            "type": "models_fetch_done",
+            "cache": _model_cache,
+            "current": _current_model,
+            "default": config.get("default_model", ""),
         })
         return agent, True
 
@@ -205,21 +288,34 @@ async def _handle_message(agent, payload: dict[str, Any], config: dict[str, Any]
             _emit({"type": "error", "message": "cannot switch model while generation is running"})
             return agent, True
 
-        available = list_available_models(config)
-        available_names = [m.get("name", "") for m in available]
-        if target_model not in available_names:
-            _emit({"type": "error", "message": f"model '{target_model}' not found. Available: {', '.join(available_names)}"})
+        try:
+            provider_name, model_id = parse_model_name(target_model)
+        except ValueError as error:
+            _emit({"type": "error", "message": str(error)})
             return agent, True
+
+        providers = config.get("providers", {})
+        if provider_name not in providers:
+            _emit({"type": "error", "message": f"Provider '{provider_name}' not found"})
+            return agent, True
+
+        # Validate model against cache if available
+        cached_models = _model_cache.get(provider_name, [])
+        if cached_models:
+            cached_ids = [m.get("id", "") for m in cached_models]
+            if model_id not in cached_ids:
+                _emit({"type": "error", "message": f"Model '{model_id}' not found in provider '{provider_name}'. Available: {', '.join(cached_ids)}"})
+                return agent, True
 
         try:
             model_cfg = resolve_model_config(config, target_model)
-            logger.info("Switching model: %s -> %s (%s)", _current_model_name, target_model, model_cfg.get("model"))
+            logger.info("Switching model: %s -> %s (%s)", _current_model, target_model, model_cfg.get("model"))
             next_agent = await _build_agent(
                 config,
                 thread_id=getattr(agent, "thread_id", None),
                 model_name=target_model,
             )
-            _current_model_name = target_model
+            _current_model = target_model
             save_global_default_model(target_model)
             _emit({"type": "model_switched", "model_name": target_model, "model": model_cfg.get("model")})
             _emit(_build_status_event(next_agent, config))
@@ -264,15 +360,15 @@ async def _handle_message(agent, payload: dict[str, Any], config: dict[str, Any]
 
 
 async def main() -> int:
-    global _stream_task, _current_model_name
+    global _stream_task, _current_model
     configure_stdio_encoding()
     try:
         config = load_runtime_config()
         configure_runtime_logging(config)
-        _current_model_name = _resolve_initial_model_name(config) or str(config.get("default_model", "") or "").strip()
-        agent = await _build_agent(config, model_name=_current_model_name or None)
-        if _current_model_name:
-            save_global_default_model(_current_model_name)
+        _current_model = _resolve_initial_model_name(config)
+        agent = await _build_agent(config, model_name=_current_model or None)
+        if _current_model:
+            save_global_default_model(_current_model)
     except Exception as error:
         configure_runtime_logging()
         logger.error("Fatal error during initialization: %s", error)

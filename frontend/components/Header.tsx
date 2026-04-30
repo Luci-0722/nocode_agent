@@ -12,7 +12,7 @@ export default function Header() {
   const width = Math.max(40, (stdout.columns || 80) - 2);
   const logoWidth = visibleLength(LOGO[0] || '');
   const rightWidth = Math.max(12, width - logoWidth - 2);
-  const modelDisplay = modelName ? `${modelName} (${model})` : model;
+  const modelDisplay = modelName || model;
 
   const lines = [
     `${COLOR.accent}${COLOR.bold}${LOGO[0]}${COLOR.reset}  ${COLOR.secondary}${truncate(`thread: ${threadId?.slice(-8) || '--------'}`, rightWidth)}${COLOR.reset}`,
