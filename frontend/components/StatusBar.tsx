@@ -24,7 +24,7 @@ export default function StatusBar() {
   const width = Math.max(24, (stdout.columns || 80) - 2);
   const modelLabel = [model, reasoningEffort].filter(Boolean).join(' ') || '-';
   const contextLine = `${COLOR.secondary}${truncate(
-    `thread ${threadId.slice(-8) || '--------'} · ${modelLabel} · ${tokensLeftPercent}% left · perm ${permissionPreference} · ${tildePath(cwd || '-')}`,
+    `thread ${(threadId || '').slice(-8) || '--------'} · ${modelLabel} · ${tokensLeftPercent}% left · perm ${permissionPreference} · ${tildePath(cwd || '-')}`,
     width,
   )}${COLOR.reset}`;
 
