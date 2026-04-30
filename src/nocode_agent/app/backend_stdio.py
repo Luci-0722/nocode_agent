@@ -26,6 +26,7 @@ from nocode_agent.runtime.bootstrap import (
     create_agent_from_config,
     load_runtime_config,
 )
+from nocode_agent.app.stdio import configure_stdio_encoding
 from nocode_agent.tool.kit import _sanitize_text
 
 logger = logging.getLogger(__name__)
@@ -264,6 +265,7 @@ async def _handle_message(agent, payload: dict[str, Any], config: dict[str, Any]
 
 async def main() -> int:
     global _stream_task, _current_model_name
+    configure_stdio_encoding()
     try:
         config = load_runtime_config()
         configure_runtime_logging(config)

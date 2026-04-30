@@ -14,9 +14,14 @@ import textwrap
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = REPO_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
 LAUNCHER_PATH = REPO_ROOT / "nocode"
 _FRONTEND_BUILT = False
 
@@ -148,6 +153,37 @@ class LauncherSmokeTest(unittest.TestCase):
             # 启动器不再设置 NOCODE_PROJECT_DIR，所以输出应该为空
             output = output_path.read_text(encoding="utf-8").strip()
             self.assertEqual(output, "")
+
+
+class BackendStdioEncodingTest(unittest.TestCase):
+    def test_backend_reconfigures_stdio_to_utf8(self) -> None:
+        from nocode_agent.app import stdio
+
+        calls: list[tuple[str, str, str]] = []
+
+        class _FakeStream:
+            def __init__(self, name: str) -> None:
+                self.name = name
+
+            def reconfigure(self, *, encoding: str, errors: str) -> None:
+                calls.append((self.name, encoding, errors))
+
+        with patch.multiple(
+            stdio.sys,
+            stdin=_FakeStream("stdin"),
+            stdout=_FakeStream("stdout"),
+            stderr=_FakeStream("stderr"),
+        ):
+            stdio.configure_stdio_encoding()
+
+        self.assertEqual(
+            calls,
+            [
+                ("stdin", "utf-8", "replace"),
+                ("stdout", "utf-8", "replace"),
+                ("stderr", "utf-8", "replace"),
+            ],
+        )
 
 
 @unittest.skipIf(sys.platform == "win32", "当前冒烟测试依赖 POSIX 只读目录权限")

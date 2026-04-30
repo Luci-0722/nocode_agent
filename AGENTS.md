@@ -209,6 +209,11 @@ PYTHONPATH=src python3 -m nocode_agent.app.backend_stdio
   正确做法：审批或提问界面显示期间，暂停 spinner 和相关高频重绘；长内容优先截断或折叠，避免把终端高度撑爆。
   最小验证：构造一个会触发 `permission_request` 的工具调用，确认弹窗出现后界面静止、方向键和 Enter 仍可正常选择。
 
+- [Windows PowerShell 编码] 错误现象：TUI 流式输出在 Windows PowerShell 中报 `stream error: 'gbk' codec cannot encode character`，随后对话中断。
+  原因：backend stdio 沿用了控制台默认 GBK 编码，JSON 事件、日志或模型输出里的 Unicode 字符写到 `stdout` / `stderr` 时触发编码异常。
+  正确做法：`src/nocode_agent/app/backend_stdio.py` 启动时先统一把 `stdin` / `stdout` / `stderr` 重配置到 UTF-8（`errors="replace"`），不要依赖 PowerShell 当前 code page。
+  最小验证：在 Windows PowerShell 中发送包含 emoji 或 CJK 扩展字符的 prompt，确认界面持续流式输出，不出现 `gbk` 编码错误。
+
 ## 开发流程
  1、开始编码前先与用户确认方案
  2、编码完成后提交一次commit
