@@ -55,7 +55,7 @@ function buildLoadingPanel(width: number, tick: number): string[] {
 
 export default function Transcript() {
   const { stdout } = useStdout();
-  const { messages, selectedToolId, streaming, transcriptScroll, generating, threadId } = useAppState();
+  const { messages, selectedToolId, streaming, generating, threadId } = useAppState();
   const [loadingTick, setLoadingTick] = useState(0);
 
   useEffect(() => {
@@ -84,7 +84,6 @@ export default function Transcript() {
   }, [messages, streaming]);
 
   const width = Math.max(24, (stdout.columns || 80) - 2);
-  const visibleCount = Math.max(4, (stdout.rows || 24) - 12);
   const emptyStateTopSpacing = Math.max(2, Math.min(3, Math.floor((stdout.rows || 24) * 0.12)));
   const renderedRows = items.flatMap((message, messageIndex) => {
     const rows = renderMessageLines(
@@ -101,31 +100,13 @@ export default function Transcript() {
     }
     return rows;
   });
-  const maxOffset = Math.max(0, renderedRows.length - visibleCount);
-  const clampedOffset = Math.max(0, Math.min(maxOffset, transcriptScroll));
-  const selectedRowIndex = selectedToolId
-    ? renderedRows.findIndex((row) => row.messageId === selectedToolId)
-    : -1;
-
-  let start = Math.max(0, renderedRows.length - visibleCount - clampedOffset);
-  if (selectedRowIndex >= 0 && clampedOffset > 0) {
-    const end = start + visibleCount;
-    if (selectedRowIndex < start) {
-      start = selectedRowIndex;
-    } else if (selectedRowIndex >= end) {
-      start = Math.max(0, selectedRowIndex - visibleCount + 1);
-    }
-  }
-  const visible = renderedRows.slice(start, start + visibleCount);
+  const visible = renderedRows;
   const loadingPanel = buildLoadingPanel(Math.max(24, width - 4), loadingTick);
-  const loadingTopSpacing = Math.max(1, Math.floor((visibleCount - loadingPanel.length) / 2));
+  const loadingTopSpacing = Math.max(1, Math.floor(((stdout.rows || 24) - loadingPanel.length) / 2));
 
   return (
-    <Box flexDirection="column" paddingX={1} flexGrow={1}>
-      {clampedOffset > 0 && (
-        <Ansi>{`${COLOR.secondary}Showing older messages. Use PageUp/PageDown to scroll the in-app history.${COLOR.reset}`}</Ansi>
-      )}
-      <Box flexDirection="column" flexGrow={1} justifyContent="flex-end">
+    <Box flexDirection="column" paddingX={1}>
+      <Box flexDirection="column">
         {!threadId ? (
           <Box flexDirection="column">
             {Array.from({ length: loadingTopSpacing }).map((_, index) => (

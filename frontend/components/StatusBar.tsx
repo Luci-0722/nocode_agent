@@ -13,7 +13,6 @@ export default function StatusBar() {
     reasoningEffort,
     threadId,
     tokensLeftPercent,
-    transcriptScroll,
     cwd,
     modelPickerOpen,
     permissionRequest,
@@ -29,7 +28,7 @@ export default function StatusBar() {
     width,
   )}${COLOR.reset}`;
 
-  let hint = `Enter 发送  Shift+Enter 换行  Ctrl+N/P 选择工具  Ctrl+O 展开${transcriptScroll > 0 ? `  ↑${transcriptScroll}` : ''}`;
+  let hint = 'Enter 发送  Shift+Enter 换行  Ctrl+N/P 选择工具  Ctrl+O 展开';
   if (!backendReady) {
     hint = 'Backend loading... 会话初始化完成后开放输入';
   } else if (modelPickerOpen || threadPickerOpen) {
@@ -39,7 +38,7 @@ export default function StatusBar() {
   } else if (questionRequest) {
     hint = '↑↓ 选择  Space 切换  Enter 提交';
   } else if (!generating) {
-    hint = `Enter 发送  Shift+Enter 换行  输入 / 打开命令  ↑↓ 选命令  Tab 补全  Ctrl+N/P 选工具${transcriptScroll > 0 ? `  ↑${transcriptScroll}` : ''}`;
+    hint = 'Enter 发送  Shift+Enter 换行  输入 / 打开命令  ↑↓ 选命令  Tab 补全  Ctrl+N/P 选工具';
   }
 
   return (

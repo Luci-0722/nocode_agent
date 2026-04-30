@@ -1,27 +1,30 @@
-# TUI Transcript Viewport
+# TUI Transcript Scrollback
 
 ## 背景
 
-TUI 的 transcript 不是普通命令输出流，而是 Ink 渲染的固定高度应用视口。
+TUI 的 transcript 曾经是 Ink 渲染的固定高度应用视口，只显示 `logo` 和输入框之间的一页内容。
 
-因此在 Windows PowerShell 里，用终端原生滚轮查看历史并不可靠；历史查看应该走应用内 viewport，也就是 `PageUp` / `PageDown` 修改 `transcriptScroll`。
+这个模型在 Windows PowerShell 里很容易造成误解：终端滚轮看起来只能看到一页，因为历史内容没有作为自然增长的终端输出保留下来。
 
 ## 问题
 
-此前 `Transcript` 会在存在 `selectedToolId` 时强制把可视窗口调整到选中的工具行附近。
+固定视口带来两个问题：
 
-这会导致一个错误行为：用户选中工具后，如果后面继续生成 assistant 内容，底部新内容已经进入 state，但可视窗口仍被选中工具锚住，看起来像 assistant 消息没有显示。
+- 用户希望像普通 CLI 一样用终端 scrollback 查看所有历史消息
+- `selectedToolId` 曾经会影响可视窗口位置，导致后续 assistant 内容已经进入 state，但看起来像没有显示
 
 ## 本次调整
 
-- `transcriptScroll === 0` 时始终保持底部跟随最新内容
-- 只有用户已经进入历史滚动状态时，才允许选中工具影响可视窗口
+- `Transcript` 不再按终端高度裁剪消息
+- 根布局不再固定为 `height="100%"`
+- transcript 区域不再使用 `flexGrow` 占据一页固定空间
+- 移除 `PageUp` / `PageDown` 的应用内 viewport 快捷键提示与处理
 
 ## 结果
 
-- 选中工具不会阻止后续 assistant 内容显示在下面
-- 工具选择仍然可以在历史浏览状态下辅助定位
-- Windows / macOS 的 transcript 行为保持一致
+- 所有消息都会正常追加到终端输出流中
+- 终端原生滚动条可以查看之前的消息
+- 工具选择只影响高亮与展开，不再限制后续内容显示
 
 ## 验证
 

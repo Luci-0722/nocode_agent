@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Box, Text, useApp, useInput, usePaste, useStdin, useStdout } from 'ink';
+import { Box, Text, useApp, useInput, usePaste, useStdin } from 'ink';
 import Composer from './components/Composer.js';
 import Header from './components/Header.js';
 import ModelPicker from './components/ModelPicker.js';
@@ -33,8 +33,6 @@ function makeSystemMessage(content: string) {
 export default function App({ resume = false, model }: Props) {
   const { exit } = useApp();
   const { stdin } = useStdin();
-  const { stdout } = useStdout();
-  const transcriptPageSize = Math.max(4, (stdout.rows || 24) - 14);
   const backend = useBackend({ resume, model });
   const [input, setInput] = useState('');
   const [queuedInput, setQueuedInput] = useState<string | null>(null);
@@ -54,7 +52,6 @@ export default function App({ resume = false, model }: Props) {
     setQuestionRequest,
     setPermissionRequest,
     setSelectedToolId,
-    setTranscriptScroll,
     threadId,
     threadPickerIndex,
     threadPickerOpen,
@@ -428,14 +425,6 @@ export default function App({ resume = false, model }: Props) {
       toggleToolExpanded(selectedToolId);
       return;
     }
-    if (key.pageUp) {
-      setTranscriptScroll((value) => value + transcriptPageSize);
-      return;
-    }
-    if (key.pageDown) {
-      setTranscriptScroll((value) => Math.max(0, value - transcriptPageSize));
-      return;
-    }
     if (key.escape && generating) {
       backend.cancel();
     }
@@ -451,9 +440,9 @@ export default function App({ resume = false, model }: Props) {
   }
 
   return (
-    <Box flexDirection="column" height="100%">
+    <Box flexDirection="column">
       <Header />
-      <Box flexGrow={1} flexDirection="column">
+      <Box flexDirection="column">
         <Transcript />
       </Box>
       {modelPickerOpen && <ModelPicker />}
