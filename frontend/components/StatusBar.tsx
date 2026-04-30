@@ -23,13 +23,16 @@ export default function StatusBar() {
 
   const width = Math.max(24, (stdout.columns || 80) - 2);
   const modelLabel = [model, reasoningEffort].filter(Boolean).join(' ') || '-';
+  const backendReady = Boolean(threadId);
   const contextLine = `${COLOR.secondary}${truncate(
     `thread ${(threadId || '').slice(-8) || '--------'} · ${modelLabel} · ${tokensLeftPercent}% left · perm ${permissionPreference} · ${tildePath(cwd || '-')}`,
     width,
   )}${COLOR.reset}`;
 
   let hint = `Enter 发送  Shift+Enter 换行  Ctrl+N/P 选择工具  Ctrl+O 展开${transcriptScroll > 0 ? `  ↑${transcriptScroll}` : ''}`;
-  if (modelPickerOpen || threadPickerOpen) {
+  if (!backendReady) {
+    hint = 'Backend loading... 会话初始化完成后开放输入';
+  } else if (modelPickerOpen || threadPickerOpen) {
     hint = '↑↓ 移动  Enter 选择  Esc 关闭';
   } else if (permissionRequest) {
     hint = '↑↓ 选择  Enter 确认';

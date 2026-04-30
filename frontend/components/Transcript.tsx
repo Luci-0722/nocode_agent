@@ -7,7 +7,7 @@ import Ansi from './Ansi.js';
 
 export default function Transcript() {
   const { stdout } = useStdout();
-  const { messages, selectedToolId, streaming, transcriptScroll, generating } = useAppState();
+  const { messages, selectedToolId, streaming, transcriptScroll, generating, threadId } = useAppState();
 
   const items = useMemo(() => {
     const base = [...messages];
@@ -64,7 +64,16 @@ export default function Transcript() {
         <Ansi>{`${COLOR.secondary}Showing older messages. Use PageUp/PageDown to scroll the in-app history.${COLOR.reset}`}</Ansi>
       )}
       <Box flexDirection="column" flexGrow={1} justifyContent="flex-end">
-        {visible.length === 0 && !generating ? (
+        {!threadId ? (
+          <Box flexDirection="column">
+            {Array.from({ length: emptyStateTopSpacing }).map((_, index) => (
+              <Text key={`loading-space-${index}`}> </Text>
+            ))}
+            <Ansi>{`${COLOR.secondary}  正在连接 backend，等待会话初始化...${COLOR.reset}`}</Ansi>
+            <Ansi>{`${COLOR.secondary}  thread 就绪后再显示输入框。${COLOR.reset}`}</Ansi>
+            <Text> </Text>
+          </Box>
+        ) : visible.length === 0 && !generating ? (
           <Box flexDirection="column">
             {Array.from({ length: emptyStateTopSpacing }).map((_, index) => (
               <Text key={`empty-space-${index}`}> </Text>

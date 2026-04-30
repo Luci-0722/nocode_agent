@@ -55,6 +55,7 @@ export default function App({ resume = false, model }: Props) {
     setPermissionRequest,
     setSelectedToolId,
     setTranscriptScroll,
+    threadId,
     threadPickerIndex,
     threadPickerOpen,
     threads,
@@ -73,6 +74,7 @@ export default function App({ resume = false, model }: Props) {
   );
 
   const overlayActive = modelPickerOpen || threadPickerOpen || !!permissionRequest || !!questionRequest;
+  const backendReady = Boolean(threadId);
   const composerDisabled = overlayActive;
   const activeQuestion = questionRequest?.questions[questionRequest.questionIndex];
   const questionTextInputActive = Boolean(
@@ -162,6 +164,10 @@ export default function App({ resume = false, model }: Props) {
     }
     if (handleSlashCommand(value)) {
       setInput('');
+      return;
+    }
+    if (!threadId) {
+      appendLocalSystem('Backend 仍在加载，当前消息还不能发送。请等待 thread 加载完成后再试。');
       return;
     }
     if (generating) {
@@ -454,12 +460,14 @@ export default function App({ resume = false, model }: Props) {
       {threadPickerOpen && <ThreadPicker />}
       {permissionRequest && <PermissionDialog />}
       {questionRequest && <QuestionDialog />}
-      <Composer
-        value={input}
-        onChange={setInput}
-        onSubmit={handleSubmit}
-        disabled={composerDisabled}
-      />
+      {backendReady ? (
+        <Composer
+          value={input}
+          onChange={setInput}
+          onSubmit={handleSubmit}
+          disabled={composerDisabled}
+        />
+      ) : null}
       <StatusBar />
     </Box>
   );
