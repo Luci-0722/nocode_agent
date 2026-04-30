@@ -66,17 +66,13 @@ tests/            启动与交互相关冒烟测试
 
 ## 快速开始
 
-1. 安装 Python 包（建议使用虚拟环境）：
+### macOS / Linux
+
+1. 创建并激活虚拟环境，安装依赖：
 
 ```bash
-python -m venv .venv
-
-# Windows PowerShell
-.venv\Scripts\Activate.ps1
-
-# macOS / Linux
+python3 -m venv .venv
 source .venv/bin/activate
-
 pip install -e .
 ```
 
@@ -103,6 +99,48 @@ cp config.example.yaml .nocode/config.yaml
 
 ```bash
 ./nocode --resume
+```
+
+### Windows
+
+1. 创建并激活虚拟环境，安装依赖：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e .
+```
+
+2. 准备配置文件：
+
+```powershell
+New-Item -ItemType Directory -Force -Path .nocode
+Copy-Item config.example.yaml .nocode\config.yaml
+```
+
+3. 修改 `.nocode\config.yaml`，至少填好模型相关配置：
+
+- `model`
+- `base_url`
+- `api_key`
+
+4. 安装前端依赖并构建 TUI：
+
+```powershell
+cd frontend
+npm install
+npm run build
+cd ..
+```
+
+5. 启动：
+
+```powershell
+# 方式一：使用启动器（需先安装，见下方"安装启动器"）
+nocode
+
+# 方式二：直接运行
+node frontend\dist\index.js
 ```
 
 ## 安装启动器
