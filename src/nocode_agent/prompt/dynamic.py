@@ -49,6 +49,11 @@ class DynamicPromptMiddleware(AgentMiddleware):
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
         """每次模型调用前动态构建并注入 system prompt。"""
         prompt_started_at = perf_counter()
+        logger.info(
+            "Dynamic prompt build started (cwd=%s, cache=%s)",
+            self._cwd,
+            "on" if self._use_cache else "off",
+        )
         prompt = self._build_prompt()
         logger.info(
             "Dynamic prompt built in %.3fs (cwd=%s, chars=%d, cache=%s)",
@@ -85,34 +90,52 @@ class DynamicPromptMiddleware(AgentMiddleware):
 
         # 实时读取指令文件
         files_started_at = perf_counter()
+        logger.info("Dynamic prompt: instruction discovery started")
         if self._use_cache:
             files = self._discover_instruction_files_cached()
         else:
             files = discover_instruction_files(self._cwd)
         files_elapsed = perf_counter() - files_started_at
+        logger.info(
+            "Dynamic prompt: instruction discovery finished in %.3fs (%d files)",
+            files_elapsed,
+            len(files),
+        )
 
         if files:
             sections.append(render_instruction_files(files))
 
         agent_listing_started_at = perf_counter()
+        logger.info("Dynamic prompt: agent listing started")
         agent_listing = build_agent_listing_section()
         agent_listing_elapsed = perf_counter() - agent_listing_started_at
+        logger.info(
+            "Dynamic prompt: agent listing finished in %.3fs (%s)",
+            agent_listing_elapsed,
+            "present" if agent_listing else "empty",
+        )
         if agent_listing:
             sections.append(agent_listing)
 
         # 实时扫描 skills
         skills_started_at = perf_counter()
+        logger.info("Dynamic prompt: skills section started")
         skills_section = self._build_skills_section()
         skills_elapsed = perf_counter() - skills_started_at
+        logger.info(
+            "Dynamic prompt: skills section finished in %.3fs (%s)",
+            skills_elapsed,
+            "present" if skills_section else "empty",
+        )
         if skills_section:
             sections.append(skills_section)
 
-        logger.debug(
-            "DynamicPromptMiddleware._build_dynamic_prompt timings: files=%.3fs skills=%.3fs agents=%.3fs total=%.3fs",
-            files_elapsed,
-            skills_elapsed,
-            agent_listing_elapsed,
+        logger.info(
+            "Dynamic prompt: dynamic section built in %.3fs (files=%.3fs, agents=%.3fs, skills=%.3fs)",
             perf_counter() - started_at,
+            files_elapsed,
+            agent_listing_elapsed,
+            skills_elapsed,
         )
         return "\n\n".join(sections)
 
