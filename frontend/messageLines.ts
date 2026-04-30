@@ -7,6 +7,7 @@ import {
   stripAnsi,
   truncate,
   truncateAnsiAware,
+  UI_GLYPHS,
   visibleLength,
   wrap,
   wrapAnsiAware,
@@ -188,7 +189,7 @@ function renderTextMessageLines(message: Extract<Message, { kind: 'message' }>, 
 
   if (message.role === 'assistant') {
     return renderMarkdownLines(message.content || ' ', availableWidth).map((line, index) => {
-      const leader = index === 0 ? '⏺ ' : '  ';
+      const leader = index === 0 ? UI_GLYPHS.assistantLeader : '  ';
       return `${COLOR.accent}${leader}${COLOR.reset}${line}`;
     });
   }
@@ -211,7 +212,7 @@ function renderTextMessageLines(message: Extract<Message, { kind: 'message' }>, 
   }
 
   return wrap(message.content || ' ', availableWidth).map((line, index) => {
-    const leader = index === 0 ? (message.role === 'user' ? '❯ ' : '  ') : '  ';
+    const leader = index === 0 ? (message.role === 'user' ? UI_GLYPHS.userLeader : '  ') : '  ';
     const contentWithState =
       message.role === 'user' && index === 0 ? renderUserStateTag(line, message.state) : line;
     const body =
@@ -233,10 +234,10 @@ function renderToolDetails(message: ToolMessage, width: number, selected: boolea
   const args = message.args && Object.keys(message.args).length > 0 ? formatToolArgs(message.args) : '无参数';
   const output = message.output?.trim() ? message.output.trim() : '(无输出)';
   wrap(`args: ${args}`, availableWidth).forEach((line) => {
-    lines.push(`${selected ? COLOR.selectedSubtle : COLOR.tool}${COLOR.dim}  ⎿ ${line}${COLOR.reset}`);
+    lines.push(`${selected ? COLOR.selectedSubtle : COLOR.tool}${COLOR.dim}${UI_GLYPHS.toolDetailLeader}${line}${COLOR.reset}`);
   });
   wrap(`result: ${output}`, availableWidth).forEach((line) => {
-    lines.push(`${selected ? COLOR.selectedSubtle : COLOR.tool}${COLOR.dim}  ⎿ ${line}${COLOR.reset}`);
+    lines.push(`${selected ? COLOR.selectedSubtle : COLOR.tool}${COLOR.dim}${UI_GLYPHS.toolDetailLeader}${line}${COLOR.reset}`);
   });
 
   (message.subagents || []).forEach((subagent) => {
@@ -246,7 +247,7 @@ function renderToolDetails(message: ToolMessage, width: number, selected: boolea
       `subagent ${subagent.subagent_type} · ${truncate(subagent.thread_id, 28)} · ${status}${summary}`,
       Math.max(12, width - 8),
     ).forEach((line) => {
-      lines.push(`${selected ? COLOR.selectedSubtle : COLOR.tool}    ↳ ${line}${COLOR.reset}`);
+      lines.push(`${selected ? COLOR.selectedSubtle : COLOR.tool}${UI_GLYPHS.subagentLeader}${line}${COLOR.reset}`);
     });
     subagent.tool_calls.forEach((toolCall) => {
       lines.push(...renderSubagentTool(toolCall, width));

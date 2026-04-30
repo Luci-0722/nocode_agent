@@ -1,12 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Text, useStdout } from 'ink';
 import { useAppState } from '../hooks/useAppState.js';
-import { COLOR, padRight, truncate } from '../rendering.js';
+import { COLOR, padRight, truncate, UI_GLYPHS } from '../rendering.js';
 import { renderMessageLines } from '../messageLines.js';
 import Ansi from './Ansi.js';
-
-const ORBIT_FRAMES = ['◐', '◓', '◑', '◒'];
-const GLYPH_FRAMES = ['✦', '✧', '·', '✧'];
 
 function buildSignalBar(width: number, tick: number, color: string): string {
   const length = Math.max(14, Math.min(width, 28));
@@ -14,26 +11,26 @@ function buildSignalBar(width: number, tick: number, color: string): string {
   return Array.from({ length }).map((_, index) => {
     const distance = Math.abs(index - head);
     if (distance === 0) {
-      return `${color}◆${COLOR.reset}`;
+      return `${color}${UI_GLYPHS.signalHead}${COLOR.reset}`;
     }
     if (distance === 1) {
-      return `${COLOR.soft}◇${COLOR.reset}`;
+      return `${COLOR.soft}${UI_GLYPHS.signalTail}${COLOR.reset}`;
     }
-    return `${COLOR.secondary}·${COLOR.reset}`;
+    return `${COLOR.secondary}${UI_GLYPHS.signalDot}${COLOR.reset}`;
   }).join('');
 }
 
 function buildLoadingPanel(width: number, tick: number): string[] {
   const panelWidth = Math.max(42, Math.min(width, 72));
   const innerWidth = Math.max(24, panelWidth - 4);
-  const orbit = ORBIT_FRAMES[tick % ORBIT_FRAMES.length] || ORBIT_FRAMES[0];
-  const glyph = GLYPH_FRAMES[tick % GLYPH_FRAMES.length] || GLYPH_FRAMES[0];
-  const pulseLeft = GLYPH_FRAMES[(tick + 1) % GLYPH_FRAMES.length] || GLYPH_FRAMES[0];
-  const pulseRight = GLYPH_FRAMES[(tick + 3) % GLYPH_FRAMES.length] || GLYPH_FRAMES[0];
-  const top = `${COLOR.soft}┌${'─'.repeat(panelWidth - 2)}┐${COLOR.reset}`;
-  const bottom = `${COLOR.soft}└${'─'.repeat(panelWidth - 2)}┘${COLOR.reset}`;
+  const orbit = UI_GLYPHS.orbitFrames[tick % UI_GLYPHS.orbitFrames.length] || UI_GLYPHS.orbitFrames[0];
+  const glyph = UI_GLYPHS.pulseFrames[tick % UI_GLYPHS.pulseFrames.length] || UI_GLYPHS.pulseFrames[0];
+  const pulseLeft = UI_GLYPHS.pulseFrames[(tick + 1) % UI_GLYPHS.pulseFrames.length] || UI_GLYPHS.pulseFrames[0];
+  const pulseRight = UI_GLYPHS.pulseFrames[(tick + 3) % UI_GLYPHS.pulseFrames.length] || UI_GLYPHS.pulseFrames[0];
+  const top = `${COLOR.soft}${UI_GLYPHS.box.topLeft}${UI_GLYPHS.box.horizontal.repeat(panelWidth - 2)}${UI_GLYPHS.box.topRight}${COLOR.reset}`;
+  const bottom = `${COLOR.soft}${UI_GLYPHS.box.bottomLeft}${UI_GLYPHS.box.horizontal.repeat(panelWidth - 2)}${UI_GLYPHS.box.bottomRight}${COLOR.reset}`;
   const line = (content = '') =>
-    `${COLOR.soft}│${COLOR.reset} ${padRight(truncate(content, innerWidth), innerWidth)} ${COLOR.soft}│${COLOR.reset}`;
+    `${COLOR.soft}${UI_GLYPHS.box.vertical}${COLOR.reset} ${padRight(truncate(content, innerWidth), innerWidth)} ${COLOR.soft}${UI_GLYPHS.box.vertical}${COLOR.reset}`;
 
   const title = `${COLOR.accent}${COLOR.bold}${pulseLeft} Session Bootstrap ${pulseRight}${COLOR.reset}`;
   const orbitLine = `${COLOR.secondary}          ${COLOR.reset}${COLOR.soft}(${COLOR.reset} ${COLOR.accent}${orbit}${COLOR.reset} ${COLOR.soft})${COLOR.reset}          ${COLOR.secondary}${glyph}${COLOR.reset}`;

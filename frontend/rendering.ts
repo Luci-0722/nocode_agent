@@ -1,4 +1,5 @@
 import os from 'node:os';
+import process from 'node:process';
 
 export const COLOR = {
   reset: '\x1b[0m',
@@ -35,7 +36,24 @@ export const COLOR = {
   },
 } as const;
 
-export const GENERATING_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+export const IS_WINDOWS = process.platform === 'win32';
+export const GENERATING_SPINNER_FRAMES = IS_WINDOWS
+  ? ['|', '/', '-', '\\']
+  : ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+export const UI_GLYPHS = {
+  assistantLeader: IS_WINDOWS ? '* ' : '⏺ ',
+  userLeader: IS_WINDOWS ? '> ' : '❯ ',
+  toolDetailLeader: IS_WINDOWS ? '  -> ' : '  ⎿ ',
+  subagentLeader: IS_WINDOWS ? '    -> ' : '    ↳ ',
+  orbitFrames: IS_WINDOWS ? ['|', '/', '-', '\\'] : ['◐', '◓', '◑', '◒'],
+  pulseFrames: IS_WINDOWS ? ['.', 'o', '.', 'o'] : ['✦', '✧', '·', '✧'],
+  signalHead: IS_WINDOWS ? '*' : '◆',
+  signalTail: IS_WINDOWS ? 'o' : '◇',
+  signalDot: IS_WINDOWS ? '.' : '·',
+  box: IS_WINDOWS
+    ? { topLeft: '+', topRight: '+', bottomLeft: '+', bottomRight: '+', horizontal: '-', vertical: '|' }
+    : { topLeft: '┌', topRight: '┐', bottomLeft: '└', bottomRight: '┘', horizontal: '─', vertical: '│' },
+} as const;
 
 export function formatDuration(seconds: number): string {
   if (seconds < 60) {
