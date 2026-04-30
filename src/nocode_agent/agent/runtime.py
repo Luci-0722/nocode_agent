@@ -6,7 +6,6 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
-from time import perf_counter
 from typing import Any
 
 import httpx
@@ -389,15 +388,8 @@ class MainAgentRuntime:
 
     async def chat(self, user_input: str):
         """异步生成器，yield (event_type, *data)。包含自动重试。"""
-        chat_started_at = perf_counter()
         logger.info("Chat started: thread=%s, chars=%d", self._thread_id[:20], len(user_input))
-        checkpointer_started_at = perf_counter()
         await self._checkpointer.ensure_setup()
-        logger.info(
-            "Chat checkpointer ensured in %.3fs: thread=%s",
-            perf_counter() - checkpointer_started_at,
-            self._thread_id[:20],
-        )
         config = {"configurable": {"thread_id": self._thread_id}}
         tracker = _SubgraphTracker()
 
@@ -406,10 +398,8 @@ class MainAgentRuntime:
             current_input: Any = self._build_initial_input(user_input)
             stream_iter = None
             next_chunk_task: asyncio.Task[Any] | None = None
-            first_chunk_wait_started_at: float | None = None
             try:
                 stream_iter, next_chunk_task = self._start_stream(current_input, config)
-                first_chunk_wait_started_at = perf_counter()
 
                 # 处理模型流，custom 事件通过 stream_mode="custom" 直接进入同一流。
                 while next_chunk_task:
@@ -445,17 +435,10 @@ class MainAgentRuntime:
                         if isinstance(token, AIMessageChunk) and token.text:
                             if not saw_first_token:
                                 saw_first_token = True
-                                wait_elapsed = (
-                                    perf_counter() - first_chunk_wait_started_at
-                                    if first_chunk_wait_started_at is not None
-                                    else 0.0
-                                )
                                 logger.info(
-                                    "Chat first token: thread=%s, attempt=%d, wait=%.3fs, since_chat_started=%.3fs",
+                                    "Chat first token: thread=%s, attempt=%d",
                                     self._thread_id[:20],
                                     attempt + 1,
-                                    wait_elapsed,
-                                    perf_counter() - chat_started_at,
                                 )
                             yield ("text", _sanitize_text(_strip_ansi(token.text)))
                         continue
@@ -476,13 +459,6 @@ class MainAgentRuntime:
                         yield event
 
                     if interrupt_request is not None:
-                        if first_chunk_wait_started_at is not None and not saw_first_token:
-                            logger.info(
-                                "Chat interrupt before first token: thread=%s, attempt=%d, wait=%.3fs",
-                                self._thread_id[:20],
-                                attempt + 1,
-                                perf_counter() - first_chunk_wait_started_at,
-                            )
                         await self._cancel_pending_task(next_chunk_task)
                         next_chunk_task = None
 
@@ -506,11 +482,10 @@ class MainAgentRuntime:
                         continue
 
                 logger.info(
-                    "Chat finished: thread=%s, attempt=%d, first_token=%s, total=%.3fs",
+                    "Chat finished: thread=%s, attempt=%d, first_token=%s",
                     self._thread_id[:20],
                     attempt + 1,
                     "yes" if saw_first_token else "no",
-                    perf_counter() - chat_started_at,
                 )
                 return
             except Exception as exc:
