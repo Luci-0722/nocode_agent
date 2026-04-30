@@ -410,11 +410,20 @@ class MainAgentRuntime:
                         break
 
                     next_chunk_task = asyncio.create_task(stream_iter.__anext__())
-                    namespace = tuple(chunk.get("ns", ()))
-                    chunk_type = chunk.get("type")
+                    # LangGraph v2 + subgraphs=True + 多 stream_mode 时
+                    # chunk 格式为 (namespace, mode, data) 三元组；
+                    # 兼容旧版 dict 格式 {"ns": ..., "type": ..., "data": ...}。
+                    if isinstance(chunk, tuple):
+                        namespace = tuple(chunk[0]) if chunk[0] else ()
+                        chunk_type = chunk[1]
+                        chunk_data = chunk[2]
+                    else:
+                        namespace = tuple(chunk.get("ns", ()))
+                        chunk_type = chunk.get("type")
+                        chunk_data = chunk.get("data", {})
 
                     if chunk_type == "messages":
-                        token, metadata = chunk["data"]
+                        token, metadata = chunk_data
                         agent_name = str(metadata.get("lc_agent_name") or "")
                         if namespace and agent_name and agent_name != "mainagent_supervisor":
                             for event in tracker.register_subagent_chunk(namespace, agent_name, token):
@@ -435,7 +444,7 @@ class MainAgentRuntime:
                         continue
 
                     if chunk_type == "custom":
-                        custom_data = chunk["data"]
+                        custom_data = chunk_data
                         if isinstance(custom_data, dict):
                             yield ("runtime_event", custom_data)
                         continue
@@ -443,7 +452,7 @@ class MainAgentRuntime:
                     if chunk_type != "updates":
                         continue
 
-                    update_data = chunk.get("data", {})
+                    update_data = chunk_data
                     request_id, interrupt_request = _extract_interrupt_request(update_data)
 
                     for event in self._iter_update_events(namespace, update_data, tracker):

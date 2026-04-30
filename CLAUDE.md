@@ -206,5 +206,5 @@ PYTHONPATH=src python3 -m nocode_agent.app.backend_stdio
 
 ## 开发流程
  1、开始编码前先与用户确认方案
- 2、编码完成后提交一次commit
- 3、特性最终开发完成后在fetures编写特性文档
+ 2、编码完成后提交commit并push代码
+ 3、涉及大的特性在最终开发完成后在fetures编写特性文档
