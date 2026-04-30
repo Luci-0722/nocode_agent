@@ -125,6 +125,30 @@ export interface AppState {
   resetConversation: () => void;
 }
 
+function buildDisplayRows(
+  cache: Record<string, ProviderModel[]>,
+  fetchResults: Record<string, ProviderFetchResult>,
+): DisplayRow[] {
+  const rows: DisplayRow[] = [];
+  const sortedProviders = Object.keys(fetchResults).sort();
+  for (const provider of sortedProviders) {
+    rows.push({ kind: 'header', provider_name: provider });
+    const result = fetchResults[provider];
+    if (!result || result.status === 'error') continue;
+    const models = cache[provider] || [];
+    for (const model of models) {
+      rows.push({
+        kind: 'model',
+        provider_name: provider,
+        model_id: model.id,
+        display_name: model.display_name || model.id,
+        qualified_name: `${provider}/${model.id}`,
+      });
+    }
+  }
+  return rows;
+}
+
 export const useAppState = create<AppState>((set) => ({
   messages: [],
   streaming: '',
@@ -193,7 +217,7 @@ export const useAppState = create<AppState>((set) => ({
         modelPickerIndex: index,
       };
     }),
-  closeModelPicker: () => set({ modelPickerOpen: false, modelOptions: [], modelPickerIndex: 0 }),
+  closeModelPicker: () => set({ modelPickerOpen: false, modelOptions: [], displayRows: [], modelPickerIndex: 0 }),
   moveModelPicker: (delta) =>
     set((state) => {
       const rows = state.displayRows;
@@ -212,33 +236,12 @@ export const useAppState = create<AppState>((set) => ({
     }),
   openModelPickerFromCache: (cache, current, defaultModel, fetchResults) =>
     set(() => {
-      const rows: DisplayRow[] = [];
-      const sortedProviders = Object.keys(cache).sort();
-
-      for (const provider of sortedProviders) {
-        rows.push({ kind: 'header', provider_name: provider });
-        const result = fetchResults[provider];
-        if (!result || result.status === 'error') continue;
-        const models = cache[provider] || [];
-        for (const model of models) {
-          rows.push({
-            kind: 'model',
-            provider_name: provider,
-            model_id: model.id,
-            display_name: model.display_name || model.id,
-            qualified_name: `${provider}/${model.id}`,
-          });
-        }
-      }
-
-      // Find current model in rows
+      const rows = buildDisplayRows(cache, fetchResults);
       const currentIdx = rows.findIndex(
         (r) => r.kind === 'model' && r.qualified_name === current,
       );
-      // If current not found, select first selectable row
       const firstSelectable = rows.findIndex((r) => r.kind === 'model');
       const index = currentIdx >= 0 ? currentIdx : Math.max(0, firstSelectable);
-
       return {
         displayRows: rows,
         modelPickerOpen: true,
@@ -247,17 +250,40 @@ export const useAppState = create<AppState>((set) => ({
       };
     }),
   updateProviderFetch: (result) =>
-    set((state) => ({
-      providerFetchResults: { ...state.providerFetchResults, [result.provider_name]: result },
-    })),
+    set((state) => {
+      const newResults = { ...state.providerFetchResults, [result.provider_name]: result };
+      // Build cache from fetch results
+      const cache: Record<string, ProviderModel[]> = {};
+      for (const [name, r] of Object.entries(newResults)) {
+        cache[name] = r.models || [];
+      }
+      const rows = buildDisplayRows(cache, newResults);
+      // Keep current index if valid, otherwise find first selectable
+      let index = state.modelPickerIndex;
+      if (index >= rows.length || rows[index]?.kind !== 'model') {
+        index = Math.max(0, rows.findIndex((r) => r.kind === 'model'));
+      }
+      return {
+        providerFetchResults: newResults,
+        displayRows: rows,
+        modelPickerIndex: index,
+      };
+    }),
   setModelFetchLoading: (loading) => set({ modelFetchLoading: loading }),
   resetProviderFetchResults: (providers) =>
-    set(() => {
+    set((state) => {
       const results: Record<string, ProviderFetchResult> = {};
       for (const p of providers) {
         results[p] = { provider_name: p, status: 'loaded', models: [], error: null };
       }
-      return { providerFetchResults: results };
+      // Open picker immediately with provider headers only
+      const rows: DisplayRow[] = providers.sort().map((p) => ({ kind: 'header' as const, provider_name: p }));
+      return {
+        providerFetchResults: results,
+        displayRows: rows,
+        modelPickerOpen: true,
+        modelPickerIndex: 0,
+      };
     }),
   openThreadPicker: (threads) => set({ threads, threadPickerOpen: true, threadPickerIndex: 0 }),
   closeThreadPicker: () => set({ threadPickerOpen: false, threads: [], threadPickerIndex: 0 }),

@@ -182,7 +182,7 @@ async def _stream_prompt(agent, prompt: str, config: dict[str, Any]) -> None:
 
 
 async def _handle_message(agent, payload: dict[str, Any], config: dict[str, Any]) -> tuple[Any, bool]:
-    global _current_model, _last_tokens_left_percent, _stream_task
+    global _current_model, _cache_populated, _last_tokens_left_percent, _stream_task
     message_type = payload.get("type")
 
     if message_type == "clear":
