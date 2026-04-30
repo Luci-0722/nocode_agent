@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, useInput, useStdin, useStdout } from 'ink';
+import { Box, useInput, usePaste, useStdin, useStdout } from 'ink';
 import { useAppState } from '../hooks/useAppState.js';
+import { isPrintableInput, normalizePastedText } from '../input.js';
 import {
   COLOR,
   formatDuration,
@@ -24,10 +25,6 @@ interface Props {
 interface ActiveSlashMenu {
   query: string;
   suggestions: SlashCommandDefinition[];
-}
-
-function isPrintableInput(input: string, key: { ctrl?: boolean; meta?: boolean }): boolean {
-  return Boolean(input) && !key.ctrl && !key.meta && !/[\u0000-\u001f\u007f]/.test(input);
 }
 
 function getActiveSlashCommandMenu(input: string): ActiveSlashMenu | null {
@@ -115,6 +112,23 @@ export default function Composer({ value, onChange, onSubmit, disabled = false }
     return true;
   };
 
+  const appendPastedText = (text: string): boolean => {
+    const normalized = normalizePastedText(text);
+    if (!normalized) {
+      return false;
+    }
+    onChange(value + normalized);
+    setHistoryIndex(-1);
+    return true;
+  };
+
+  usePaste(
+    (text) => {
+      appendPastedText(text);
+    },
+    { isActive: stdin.isTTY && !disabled },
+  );
+
   useInput(
     (input, key) => {
       if (disabled) {
@@ -200,6 +214,10 @@ export default function Composer({ value, onChange, onSubmit, disabled = false }
       if (key.ctrl && input === 'w') {
         onChange(value.replace(/\s*\S+\s*$/, ''));
         setHistoryIndex(-1);
+        return;
+      }
+
+      if (input.length > 1 && appendPastedText(input)) {
         return;
       }
 

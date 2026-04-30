@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Box, Text, useApp, useInput, useStdin } from 'ink';
+import { Box, Text, useApp, useInput, usePaste, useStdin } from 'ink';
 import Composer from './components/Composer.js';
 import Header from './components/Header.js';
 import ModelPicker from './components/ModelPicker.js';
@@ -10,6 +10,7 @@ import ThreadPicker from './components/ThreadPicker.js';
 import Transcript from './components/Transcript.js';
 import { useAppState } from './hooks/useAppState.js';
 import { useBackend } from './hooks/useBackend.js';
+import { isPrintableInput, normalizePastedText } from './input.js';
 import { buildSlashCommandHelpText } from './slashCommands.js';
 import type { ModelOption, PermissionRequestState, QuestionRequestState } from './hooks/useAppState.js';
 import type { ThreadInfo } from './types/events.js';
@@ -27,10 +28,6 @@ function makeSystemMessage(content: string) {
     content,
     timestamp: Date.now(),
   };
-}
-
-function isPrintableInput(input: string, key: { ctrl?: boolean; meta?: boolean }): boolean {
-  return Boolean(input) && !key.ctrl && !key.meta && !/[\u0000-\u001f\u007f]/.test(input);
 }
 
 export default function App({ resume = false, model }: Props) {
@@ -75,6 +72,10 @@ export default function App({ resume = false, model }: Props) {
 
   const overlayActive = modelPickerOpen || threadPickerOpen || !!permissionRequest || !!questionRequest;
   const composerDisabled = overlayActive;
+  const activeQuestion = questionRequest?.questions[questionRequest.questionIndex];
+  const questionTextInputActive = Boolean(
+    questionRequest && (activeQuestion?.options || []).length === 0,
+  );
 
   const cycleToolSelection = (direction: 1 | -1) => {
     if (selectableTools.length === 0) {
@@ -177,6 +178,20 @@ export default function App({ resume = false, model }: Props) {
       setQueuedInput(null);
     }
   }, [generating, queuedInput]);
+
+  usePaste(
+    (text) => {
+      const normalized = normalizePastedText(text);
+      if (!normalized) {
+        return;
+      }
+      updateQuestionRequest((request) => ({
+        ...request,
+        textAnswer: request.textAnswer + normalized,
+      }));
+    },
+    { isActive: stdin.isTTY && questionTextInputActive },
+  );
 
   const submitPermissionRequest = (request: PermissionRequestState) => {
     backend.sendPermissionDecisions(request.requestId, request.decisions);
@@ -373,6 +388,16 @@ export default function App({ resume = false, model }: Props) {
           textAnswer: request.textAnswer.slice(0, -1),
         }));
         return;
+      }
+      if (keyInput.length > 1) {
+        const normalized = normalizePastedText(keyInput);
+        if (normalized) {
+          updateQuestionRequest((request) => ({
+            ...request,
+            textAnswer: request.textAnswer + normalized,
+          }));
+          return;
+        }
       }
       if (isPrintableInput(keyInput, key)) {
         updateQuestionRequest((request) => ({
