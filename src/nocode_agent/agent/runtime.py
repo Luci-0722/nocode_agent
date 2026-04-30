@@ -424,6 +424,7 @@ class MainAgentRuntime:
 
                     if chunk_type == "messages":
                         token, metadata = chunk_data
+                        metadata = metadata or {}
                         agent_name = str(metadata.get("lc_agent_name") or "")
                         if namespace and agent_name and agent_name != "mainagent_supervisor":
                             for event in tracker.register_subagent_chunk(namespace, agent_name, token):
