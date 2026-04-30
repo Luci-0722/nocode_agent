@@ -260,7 +260,8 @@ function renderToolDetails(message: ToolMessage, width: number, selected: boolea
 function renderToolMessageLines(message: ToolMessage, width: number, selected: boolean): string[] {
   const bodyWidth = Math.max(12, width - 2);
   const summaryLines = getToolSummaryLines(message);
-  const prefix = `${selected ? `${COLOR.selectedBorder}${COLOR.bold}` : COLOR.tool}${selected ? '▸' : '⏺'} ${COLOR.reset}`;
+  const marker = selected ? `${UI_GLYPHS.selectedLeader} ` : UI_GLYPHS.toolLeader;
+  const prefix = `${selected ? `${COLOR.selectedBorder}${COLOR.bold}` : COLOR.tool}${marker}${COLOR.reset}`;
   const headline = wrapAnsiAware(formatToolSummary(message, bodyWidth), bodyWidth).map((line) =>
     styleToolRow(
       `${prefix}${selected ? `${COLOR.selectedText}${line}${COLOR.reset}` : `${COLOR.tool}${line}${COLOR.reset}`}`,

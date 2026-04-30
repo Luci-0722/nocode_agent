@@ -9,6 +9,7 @@ import {
   padRight,
   truncate,
   truncateAnsiAware,
+  UI_GLYPHS,
   visibleLength,
   wrap,
 } from '../rendering.js';
@@ -45,7 +46,7 @@ function getActiveSlashCommandMenu(input: string): ActiveSlashMenu | null {
   return { query, suggestions };
 }
 
-function renderSelectedRow(content: string, width: number, marker = '▸'): string {
+function renderSelectedRow(content: string, width: number, marker = UI_GLYPHS.selectedLeader): string {
   const inner = `${COLOR.selectedBorder}${COLOR.bold}${marker} ${COLOR.reset}${content}`;
   return `${COLOR.selectedBg}${padRight(inner, width)}${COLOR.reset}`;
 }
@@ -230,25 +231,25 @@ export default function Composer({ value, onChange, onSubmit, disabled = false }
   );
 
   const width = Math.max(24, (stdout.columns || 80) - 2);
-  const separator = `${COLOR.secondary}${'─'.repeat(width)}${COLOR.reset}`;
+  const separator = `${COLOR.secondary}${UI_GLYPHS.box.horizontal.repeat(width)}${COLOR.reset}`;
   const availableWidth = Math.max(12, width - 4);
   const body = value.length > 0 ? value.split('\n') : [''];
   const wrappedLines = body.flatMap((line, lineIndex) => {
     const segments = wrap(line, availableWidth);
     return segments.map((segment, segmentIndex) => {
-      const prefix = lineIndex === 0 && segmentIndex === 0 ? '❯ ' : '  ';
+      const prefix = lineIndex === 0 && segmentIndex === 0 ? UI_GLYPHS.userLeader : '  ';
       return `${COLOR.user}${COLOR.bold}${prefix}${COLOR.reset}${segment}`;
     });
   });
 
   if (wrappedLines.length === 0) {
-    wrappedLines.push(`${COLOR.user}${COLOR.bold}❯ ${COLOR.reset}`);
+    wrappedLines.push(`${COLOR.user}${COLOR.bold}${UI_GLYPHS.userLeader}${COLOR.reset}`);
   }
 
   const composerLines = [...wrappedLines];
   if (!disabled) {
     composerLines[composerLines.length - 1] =
-      `${composerLines[composerLines.length - 1]}${COLOR.user}${COLOR.bold}▋${COLOR.reset}`;
+      `${composerLines[composerLines.length - 1]}${COLOR.user}${COLOR.bold}${UI_GLYPHS.cursor}${COLOR.reset}`;
   }
 
   const slashMenuLines = (() => {
@@ -286,7 +287,7 @@ export default function Composer({ value, onChange, onSubmit, disabled = false }
           : '';
       const content = description ? `${paddedLabel}  ${description}` : paddedLabel;
       const visibleContent = truncateAnsiAware(content, Math.max(10, width - 2));
-      lines.push(selected ? renderSelectedRow(visibleContent, width, '▸') : `  ${visibleContent}`);
+      lines.push(selected ? renderSelectedRow(visibleContent, width) : `  ${visibleContent}`);
     }
 
     return lines;
@@ -307,7 +308,7 @@ export default function Composer({ value, onChange, onSubmit, disabled = false }
       {showGenerating && (
         <Ansi>
           {truncate(
-            `${COLOR.warning}${COLOR.bold}${spinnerFrame}${COLOR.reset} ${COLOR.bold}Generating${COLOR.reset} ${COLOR.secondary}(${formatDuration(elapsedSeconds)} • esc to interrupt)${COLOR.reset}`,
+            `${COLOR.warning}${COLOR.bold}${spinnerFrame}${COLOR.reset} ${COLOR.bold}Generating${COLOR.reset} ${COLOR.secondary}(${formatDuration(elapsedSeconds)} - esc to interrupt)${COLOR.reset}`,
             width,
           )}
         </Ansi>

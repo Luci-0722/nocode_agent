@@ -43,9 +43,15 @@ export const TUI_GLYPH_PROFILE =
 
 const PORTABLE_GLYPHS = {
   assistantLeader: '* ',
+  toolLeader: '* ',
   userLeader: '> ',
+  selectedLeader: '>',
+  headingLeader: '|',
+  blockquoteLeader: '| ',
+  listBullet: '- ',
   toolDetailLeader: '  -> ',
   subagentLeader: '    -> ',
+  cursor: '|',
   spinnerFrames: ['|', '/', '-', '\\'],
   orbitFrames: ['|', '/', '-', '\\'],
   pulseFrames: ['.', 'o', '.', 'o'],
@@ -57,9 +63,15 @@ const PORTABLE_GLYPHS = {
 
 const RICH_GLYPHS = {
   assistantLeader: '⏺ ',
+  toolLeader: '⏺ ',
   userLeader: '❯ ',
+  selectedLeader: '▸',
+  headingLeader: '▎',
+  blockquoteLeader: '▎ ',
+  listBullet: '• ',
   toolDetailLeader: '  ⎿ ',
   subagentLeader: '    ↳ ',
+  cursor: '▋',
   spinnerFrames: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
   orbitFrames: ['◐', '◓', '◑', '◒'],
   pulseFrames: ['✦', '✧', '·', '✧'],
@@ -367,11 +379,11 @@ export function renderMarkdownTable(tableRows: string[]): string[] {
       const padding = ' '.repeat(Math.max(0, width - visibleLength(cell)));
       return ` ${styled}${padding} `;
     });
-    lines.push(`${border}│${COLOR.reset}${styledCells.join(`${border}│${COLOR.reset}`)}${border}│${COLOR.reset}`);
+    lines.push(`${border}${UI_GLYPHS.box.vertical}${COLOR.reset}${styledCells.join(`${border}${UI_GLYPHS.box.vertical}${COLOR.reset}`)}${border}${UI_GLYPHS.box.vertical}${COLOR.reset}`);
 
     if (rowIndex === 0) {
-      const separator = colWidths.map((width) => `${border}${'─'.repeat(width + 2)}${COLOR.reset}`);
-      lines.push(`${border}├${COLOR.reset}${separator.join(`${border}┼${COLOR.reset}`)}${border}┤${COLOR.reset}`);
+      const separator = colWidths.map((width) => `${border}${UI_GLYPHS.box.horizontal.repeat(width + 2)}${COLOR.reset}`);
+      lines.push(`${border}+${COLOR.reset}${separator.join(`${border}+${COLOR.reset}`)}${border}+${COLOR.reset}`);
     }
   }
 
@@ -419,7 +431,7 @@ export function renderMarkdownLines(content: string, width: number): string[] {
     const headingMatch = raw.match(/^(#{1,6})\s+(.*)/);
     if (headingMatch) {
       const level = headingMatch[1]?.length || 1;
-      const prefix = `▎${' '.repeat(Math.max(0, 4 - level))}`;
+      const prefix = `${UI_GLYPHS.headingLeader}${' '.repeat(Math.max(0, 4 - level))}`;
       lines.push('');
       lines.push(`${COLOR.md.headingBold}${prefix}${renderInlineMarkdown(headingMatch[2] || '')}${COLOR.reset}`);
       lines.push('');
@@ -428,7 +440,7 @@ export function renderMarkdownLines(content: string, width: number): string[] {
     }
 
     if (/^(\s*[-*_]){3,}\s*$/.test(raw)) {
-      lines.push(`${COLOR.md.hr}${'─'.repeat(width)}${COLOR.reset}`);
+      lines.push(`${COLOR.md.hr}${UI_GLYPHS.box.horizontal.repeat(width)}${COLOR.reset}`);
       index += 1;
       continue;
     }
@@ -438,7 +450,7 @@ export function renderMarkdownLines(content: string, width: number): string[] {
         const quote = (sourceLines[index] || '').replace(/^>\s?/, '');
         const wrapped = wrapAnsiAware(renderInlineMarkdown(quote), Math.max(4, width - 2));
         for (const line of wrapped) {
-          lines.push(`${COLOR.md.blockquote}▎ ${line}${COLOR.reset}`);
+          lines.push(`${COLOR.md.blockquote}${UI_GLYPHS.blockquoteLeader}${line}${COLOR.reset}`);
         }
         index += 1;
       }
@@ -450,7 +462,7 @@ export function renderMarkdownLines(content: string, width: number): string[] {
         const itemText = (sourceLines[index] || '').replace(/^\s*[-*+]\s/, '');
         const wrapped = wrapAnsiAware(renderInlineMarkdown(itemText), Math.max(4, width - 2));
         wrapped.forEach((line, itemIndex) => {
-          lines.push(itemIndex === 0 ? `${COLOR.md.listBullet}• ${COLOR.reset}${line}` : `  ${line}`);
+          lines.push(itemIndex === 0 ? `${COLOR.md.listBullet}${UI_GLYPHS.listBullet}${COLOR.reset}${line}` : `  ${line}`);
         });
         index += 1;
       }
