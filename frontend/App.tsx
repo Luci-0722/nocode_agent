@@ -74,7 +74,6 @@ export default function App({ resume = false, model }: Props) {
   );
 
   const overlayActive = modelPickerOpen || threadPickerOpen || !!permissionRequest || !!questionRequest;
-  const backendReady = Boolean(threadId);
   const composerDisabled = overlayActive;
   const activeQuestion = questionRequest?.questions[questionRequest.questionIndex];
   const questionTextInputActive = Boolean(

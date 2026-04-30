@@ -280,7 +280,6 @@ async def main() -> int:
         return 1
 
     _emit(_build_status_event(agent, config, event_type="hello"))
-
     while True:
         line = await asyncio.to_thread(sys.stdin.readline)
         if not line:
