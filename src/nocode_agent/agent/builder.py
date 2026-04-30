@@ -59,6 +59,7 @@ def _build_session_memory_extractor(
     proxy: str,
     no_proxy: list[str] | None,
     request_timeout: float,
+    ssl_verify: bool,
     thread_id: str,
 ) -> SessionMemoryExtractor | None:
     """按配置构造 Session Memory 提取器。"""
@@ -75,6 +76,7 @@ def _build_session_memory_extractor(
         proxy=proxy,
         no_proxy=no_proxy,
         request_timeout=request_timeout,
+        ssl_verify=ssl_verify,
     )
     return SessionMemoryExtractor(
         config=sm_config,
@@ -93,6 +95,7 @@ def _build_auto_compactor(
     proxy: str,
     no_proxy: list[str] | None,
     request_timeout: float,
+    ssl_verify: bool,
     sm_extractor: SessionMemoryExtractor | None,
 ) -> AutoCompactor | None:
     """按配置构造 Auto-Compact 组件。"""
@@ -109,6 +112,7 @@ def _build_auto_compactor(
         proxy=proxy,
         no_proxy=no_proxy,
         request_timeout=request_timeout,
+        ssl_verify=ssl_verify,
     )
     return AutoCompactor(
         config=ac_config,
@@ -143,6 +147,7 @@ def build_mainagent_setup(
     proxy: str,
     no_proxy: list[str] | None,
     request_timeout: float,
+    ssl_verify: bool,
 ) -> MainAgentSetupArtifacts:
     """构造 MainAgent 的会话前置装配产物。"""
     resolved_thread_id = thread_id or f"mainagent-{uuid4().hex}"
@@ -154,6 +159,7 @@ def build_mainagent_setup(
         proxy=proxy,
         no_proxy=no_proxy,
         request_timeout=request_timeout,
+        ssl_verify=ssl_verify,
         thread_id=resolved_thread_id,
     )
     auto_compactor = _build_auto_compactor(
@@ -165,6 +171,7 @@ def build_mainagent_setup(
         proxy=proxy,
         no_proxy=no_proxy,
         request_timeout=request_timeout,
+        ssl_verify=ssl_verify,
         sm_extractor=sm_extractor,
     )
 

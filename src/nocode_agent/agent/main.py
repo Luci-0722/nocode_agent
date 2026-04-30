@@ -199,11 +199,12 @@ async def create_mainagent(
     proxy: str = "",
     no_proxy: list[str] | None = None,
     request_timeout: float = 90.0,
+    ssl_verify: bool = True,
 ) -> MainAgent:
     """创建主代理和代码子代理。"""
     logger.info(
-        "Creating MainAgent: model=%s, base_url=%s, max_tokens=%d, temperature=%.2f, proxy=%s, no_proxy=%s, timeout=%.1fs",
-        model, base_url, max_tokens, temperature, proxy or "(none)", ",".join(no_proxy or []) or "(none)", request_timeout,
+        "Creating MainAgent: model=%s, base_url=%s, max_tokens=%d, temperature=%.2f, proxy=%s, no_proxy=%s, timeout=%.1fs, ssl_verify=%s",
+        model, base_url, max_tokens, temperature, proxy or "(none)", ",".join(no_proxy or []) or "(none)", request_timeout, ssl_verify,
     )
     context_window = resolve_context_window(model)
     checkpointer = CheckpointerManager(resolve_checkpoint_path(persistence_config))
@@ -222,6 +223,7 @@ async def create_mainagent(
         proxy=proxy,
         no_proxy=no_proxy,
         request_timeout=request_timeout,
+        ssl_verify=ssl_verify,
     )
     resolved_thread_id = setup_artifacts.resolved_thread_id
     interactive_broker = setup_artifacts.interactive_broker
@@ -237,6 +239,7 @@ async def create_mainagent(
         proxy=proxy,
         no_proxy=no_proxy,
         request_timeout=request_timeout,
+        ssl_verify=ssl_verify,
     )
     subagent_llm = build_model(
         api_key=api_key,
@@ -247,6 +250,7 @@ async def create_mainagent(
         proxy=proxy,
         no_proxy=no_proxy,
         request_timeout=request_timeout,
+        ssl_verify=ssl_verify,
     )
 
     core_tools = build_core_tools(interactive_broker.ask_user_question)
@@ -275,6 +279,7 @@ async def create_mainagent(
                 proxy=proxy,
                 no_proxy=no_proxy,
                 request_timeout=request_timeout,
+                ssl_verify=ssl_verify,
             )
             subagent_models[model_name] = cached
         return cached

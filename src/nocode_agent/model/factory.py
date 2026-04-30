@@ -67,6 +67,7 @@ def build_model(
     proxy: str = "",
     no_proxy: list[str] | None = None,
     request_timeout: float = 90.0,
+    ssl_verify: bool = True,
 ) -> BaseChatModel:
     """按 provider 构建聊天模型客户端。"""
     normalized_base_url = normalize_model_base_url(base_url)
@@ -82,8 +83,15 @@ def build_model(
             "timeout": request_timeout,
             "stream_usage": True,  # 流式模式下也返回 usage_metadata
         }
-        if proxy:
-            kwargs["anthropic_proxy"] = proxy
+        if proxy or not ssl_verify:
+            anthropic_httpx_kwargs: dict[str, Any] = {
+                "timeout": request_timeout,
+                "verify": ssl_verify,
+            }
+            if proxy:
+                anthropic_httpx_kwargs["proxy"] = proxy
+            kwargs["http_client"] = httpx.Client(**anthropic_httpx_kwargs)
+            kwargs["http_async_client"] = httpx.AsyncClient(**anthropic_httpx_kwargs)
         if proxy and no_proxy:
             # Anthropic 客户端暂不支持像 OpenAI 客户端那样显式挂载 no_proxy 规则。
             logger.warning(
@@ -110,11 +118,22 @@ def build_model(
             proxy=proxy,
             mounts=mounts,
             timeout=request_timeout,
+            verify=ssl_verify,
         )
         kwargs["http_async_client"] = httpx.AsyncClient(
             proxy=proxy,
             mounts=mounts,
             timeout=request_timeout,
+            verify=ssl_verify,
+        )
+    elif not ssl_verify:
+        kwargs["http_client"] = httpx.Client(
+            timeout=request_timeout,
+            verify=False,
+        )
+        kwargs["http_async_client"] = httpx.AsyncClient(
+            timeout=request_timeout,
+            verify=False,
         )
     return _make_sanitized_model(ChatOpenAI(**kwargs))
 

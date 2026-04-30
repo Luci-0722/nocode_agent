@@ -15,6 +15,7 @@ from nocode_agent.config import (
     resolve_no_proxy,
     resolve_proxy,
     resolve_request_timeout,
+    resolve_ssl_verify,
     list_available_models,
     resolve_model_config,
 )
@@ -100,6 +101,7 @@ def build_mainagent_kwargs(
         "proxy": resolve_proxy(config),
         "no_proxy": resolve_no_proxy(config),
         "request_timeout": resolve_request_timeout(config),
+        "ssl_verify": resolve_ssl_verify(config),
     }
 
 

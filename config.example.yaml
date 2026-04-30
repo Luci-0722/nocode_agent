@@ -64,6 +64,10 @@ default_model: glm
 #   no_proxy:
 #     - localhost
 #     - 127.0.0.1
+#
+# 使用代理时如遇到 SSL 证书验证失败（公司代理、中间人代理等），
+# 可设置 ssl_verify: false 跳过验证。也可通过环境变量 NOCODE_SSL_VERIFY=false 设置。
+# ssl_verify: false
 
 # 模型请求超时（秒）。默认 90 秒，避免长时间卡住无反馈。
 request_timeout: 90

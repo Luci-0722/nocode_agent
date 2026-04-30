@@ -291,6 +291,25 @@ def resolve_no_proxy(config: dict[str, Any]) -> list[str]:
     return []
 
 
+def resolve_ssl_verify(config: dict[str, Any], default: bool = True) -> bool:
+    """统一解析 SSL 证书验证开关。
+
+    优先级: 环境变量 NOCODE_SSL_VERIFY > 配置文件 ssl_verify 字段
+    返回 True 表示验证 SSL（默认），False 表示跳过验证。
+    """
+    env_value = os.environ.get("NOCODE_SSL_VERIFY", "").strip().lower()
+    if env_value:
+        return env_value not in ("0", "false", "no", "off")
+
+    config_value = config.get("ssl_verify")
+    if config_value is not None:
+        if isinstance(config_value, bool):
+            return config_value
+        return str(config_value).strip().lower() not in ("0", "false", "no", "off")
+
+    return default
+
+
 def resolve_request_timeout(config: dict[str, Any], default: float = 90.0) -> float:
     """统一解析模型请求超时时间（秒）。"""
     raw_value = config.get("request_timeout", default)
