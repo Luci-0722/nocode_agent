@@ -172,8 +172,13 @@ PYTHONPATH=src python3 -m nocode_agent.app.backend_stdio
 
 - [ANSI 序列分片] 错误现象：TUI 显示类似 "186;198;207m" 的残留文本，这是 ANSI 真彩色序列的 RGB 部分被原样输出。
   原因：模型输出中的 ANSI 序列在流式传输时被分片，`\x1b[38;2;186;198;207m` 可能拆成多个 chunk，TUI 的 `stripAnsi` 只能匹配完整序列。
-  正确做法：在工具层统一剥离 ANSI 序列（`src/nocode_agent/tool/kit.py` 的 `_strip_ansi`），`_trim_output` 会自动调用；runtime 层的模型输出也会调用。TUI 端作为防御层再处理分片残留（必须含分号才匹配，避免误删 "2.0m" 等正常文本）。
-  最小验证：正则 `\x1b\[[0-9;]*[mK]`，TUI 防御用 `[0-9]+;[0-9;]*m`。
+  正确做法：在工具层统一剥离 ANSI 序列（`src/nocode_agent/tool/kit.py` 的 `_strip_ansi`），`_trim_output` 会自动调用；runtime 层的模型输出也会调用。TUI 端不要只靠正则兜底，流式文本入口要维护 ANSI pending buffer，遇到不完整的 `ESC[` / `38;2;...` / `48;2;...` 序列先缓存，等下一个 chunk 到齐后再决定是否输出。
+  最小验证：手工构造 `\x1b[38;2;186;` 和 `198;207mfoo` 两段分开发送，确认界面只显示 `foo`，不出现 `[38;2;...m` 残片。
+
+- [Transcript 滚动视口] 错误现象：长消息很多时，TUI 向上翻历史只能看到“半截消息”，看起来像滚动失效。
+  原因：如果 transcript 只按消息条数裁剪，而不是按渲染后的实际行数裁剪，任意一条多行消息都会把 viewport 计算打歪。
+  正确做法：scrollback / viewport 统一按渲染行维护，消息先展开成行，再基于行数计算可视窗口；不要依赖终端原生 scrollback 替代应用内历史视图。
+  最小验证：构造一条超长多行 assistant 消息，连续 PageUp / PageDown，确认能完整看到消息首尾且不会被中途截断。
 
 - [TUI 输入框] 错误现象：改完 composer、wrap、spinner 或 prompt 前缀后，光标显示到了输入框外，或者落在错误行。
   正确做法：任何影响输入区可视高度、前缀宽度、换行结果的改动，都同步检查 `positionCursor()`、`renderComposer()`、`wrap()` 的一致性。

@@ -6,6 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
+import { AnsiTextStream, sanitizeAnsiText } from '../ansiStream.js';
 import { useAppState, type Message, type TextMessage, type ToolMessage } from './useAppState.js';
 import type {
   BackendEvent,
@@ -115,6 +116,7 @@ export function useBackend(config: BackendConfig = {}) {
   const stderrTailRef = useRef('');
   const backendLogPathRef = useRef(resolveBackendLogPath(process.cwd()));
   const backendReportedFatalRef = useRef(false);
+  const ansiStreamRef = useRef(new AnsiTextStream());
   const messageCounterRef = useRef(1);
   const subagentToolCounterRef = useRef(1);
 
@@ -175,6 +177,7 @@ export function useBackend(config: BackendConfig = {}) {
       });
     }
     clearStreaming();
+    ansiStreamRef.current.reset();
     setGenerating(false);
   }, [addMessage, clearStreaming, setGenerating]);
 
@@ -249,7 +252,7 @@ export function useBackend(config: BackendConfig = {}) {
           id: nextMessageId('msg', messageCounterRef),
           kind: 'message',
           role: coerceRole(textEntry.role),
-          content: textEntry.content,
+          content: sanitizeAnsiText(textEntry.content),
           timestamp: Date.now(),
         };
       });
@@ -258,6 +261,7 @@ export function useBackend(config: BackendConfig = {}) {
       setSelectedToolId(null);
       setTranscriptScroll(0);
       clearStreaming();
+      ansiStreamRef.current.reset();
       setGenerating(false);
     },
     [clearStreaming, setGenerating, setMessages, setSelectedToolId, setTranscriptScroll],
@@ -282,11 +286,12 @@ export function useBackend(config: BackendConfig = {}) {
           break;
         case 'cleared':
           resetConversation();
+          ansiStreamRef.current.reset();
           setStatus({ threadId: event.thread_id });
           break;
         case 'text':
           setTranscriptScroll((value) => (value === 0 ? 0 : value));
-          setStreaming((previous) => previous + event.delta);
+          setStreaming((previous) => previous + ansiStreamRef.current.push(event.delta));
           break;
         case 'retry':
           pushSystemMessage(`Retry ${event.attempt}/${event.max_retries}: ${event.message}`);
@@ -304,6 +309,7 @@ export function useBackend(config: BackendConfig = {}) {
               timestamp: Date.now(),
             });
             clearStreaming();
+            ansiStreamRef.current.reset();
           }
           const tool: ToolMessage = {
             id: nextMessageId('tool', messageCounterRef),
