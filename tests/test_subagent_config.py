@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import asyncio
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -29,6 +30,8 @@ from nocode_agent.agent.subagents import (  # noqa: E402
     init_agent_registry,
     resolve_agent_tools,
 )
+from langchain_core.messages import AIMessage  # noqa: E402
+from nocode_agent.tool.delegate import make_agent_tool  # noqa: E402
 from nocode_agent.tool.registry import build_subagent_type_description  # noqa: E402
 
 
@@ -199,6 +202,27 @@ You are the project reviewer.
         self.assertIn("reviewer", description)
         self.assertIn("Review database migrations", description)
         self.assertIn("read, grep", description)
+
+    def test_delegate_code_returns_full_subagent_summary(self) -> None:
+        long_summary = "\x1b[31m" + ("x" * 13_000) + "\x1b[0m"
+
+        class FakeAgent:
+            async def ainvoke(self, payload, config=None):  # noqa: ANN001
+                return {"messages": [AIMessage(content=long_summary)]}
+
+        delegate_code = make_agent_tool({"Explore": FakeAgent()})
+        result = asyncio.run(
+            delegate_code.ainvoke(
+                {
+                    "subagent_type": "Explore",
+                    "task": "return a long summary",
+                }
+            )
+        )
+
+        self.assertEqual(result, "x" * 13_000)
+        self.assertNotIn("已截断", result)
+        self.assertNotIn("\x1b[31m", result)
 
 
 if __name__ == "__main__":

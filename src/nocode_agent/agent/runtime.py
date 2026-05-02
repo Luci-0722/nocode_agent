@@ -122,6 +122,14 @@ def _parent_tool_call_id_from_namespace(namespace: tuple[str, ...]) -> str:
     return task_id
 
 
+def _subagent_name_from_namespace(namespace: tuple[str, ...]) -> str:
+    for item in namespace[1:]:
+        node_name = item.split(":", 1)[0]
+        if node_name and node_name != "tools":
+            return node_name
+    return ""
+
+
 def _extract_interrupt_request(
     update_data: Any,
 ) -> tuple[str, dict[str, Any] | None]:
@@ -145,13 +153,12 @@ class _SubgraphTracker:
     meta_by_key: dict[tuple[str, ...], dict[str, str]] = field(default_factory=dict)
     text_by_key: dict[tuple[str, ...], list[str]] = field(default_factory=dict)
 
-    def register_subagent_chunk(
+    def ensure_subagent(
         self,
         namespace: tuple[str, ...],
-        agent_name: str,
-        token: Any,
+        agent_name: str = "",
     ) -> list[tuple[Any, ...]]:
-        """记录子代理的首个 token，并在必要时产出 start 事件。"""
+        """根据 LangGraph namespace 注册子代理，并在首次出现时产出 start 事件。"""
         events: list[tuple[Any, ...]] = []
         subagent_key = _subagent_key_from_namespace(namespace)
         parent_tool_call_id = _parent_tool_call_id_from_namespace(namespace)
@@ -160,7 +167,8 @@ class _SubgraphTracker:
             and parent_tool_call_id
             and subagent_key not in self.meta_by_key
         ):
-            subagent_type = _normalize_subagent_type(agent_name)
+            resolved_agent_name = agent_name or _subagent_name_from_namespace(namespace)
+            subagent_type = _normalize_subagent_type(resolved_agent_name)
             self.meta_by_key[subagent_key] = {
                 "parent_tool_call_id": parent_tool_call_id,
                 "subagent_id": " / ".join(subagent_key),
@@ -178,7 +186,17 @@ class _SubgraphTracker:
                     },
                 )
             )
+        return events
 
+    def register_subagent_chunk(
+        self,
+        namespace: tuple[str, ...],
+        agent_name: str,
+        token: Any,
+    ) -> list[tuple[Any, ...]]:
+        """记录子代理的首个 token，并在必要时产出 start 事件。"""
+        events = self.ensure_subagent(namespace, agent_name)
+        subagent_key = _subagent_key_from_namespace(namespace)
         if isinstance(token, AIMessageChunk) and token.text and subagent_key in self.meta_by_key:
             self.text_by_key.setdefault(subagent_key, []).append(token.text)
         return events
@@ -190,6 +208,7 @@ class _SubgraphTracker:
     ) -> list[tuple[Any, ...]]:
         """把模型阶段消息转成 tool_start 相关事件。"""
         events: list[tuple[Any, ...]] = []
+        events.extend(self.ensure_subagent(namespace))
         subagent_key = _subagent_key_from_namespace(namespace)
         if subagent_key and subagent_key in self.meta_by_key:
             subgraph_meta = self.meta_by_key.get(subagent_key, {})
@@ -229,6 +248,7 @@ class _SubgraphTracker:
     ) -> list[tuple[Any, ...]]:
         """把工具阶段消息转成 tool_end / subagent_finish 事件。"""
         events: list[tuple[Any, ...]] = []
+        events.extend(self.ensure_subagent(namespace))
         subagent_key = _subagent_key_from_namespace(namespace)
         if subagent_key and subagent_key in self.meta_by_key:
             subgraph_meta = self.meta_by_key.get(subagent_key, {})
@@ -426,7 +446,7 @@ class MainAgentRuntime:
                         token, metadata = chunk_data
                         metadata = metadata or {}
                         agent_name = str(metadata.get("lc_agent_name") or "")
-                        if namespace and agent_name and agent_name != "mainagent_supervisor":
+                        if namespace:
                             for event in tracker.register_subagent_chunk(namespace, agent_name, token):
                                 yield event
                             continue

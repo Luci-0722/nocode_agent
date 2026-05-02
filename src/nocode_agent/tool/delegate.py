@@ -57,7 +57,7 @@ def make_agent_tool(
         thread_id: str = "",
     ) -> str:
         """把任务委派给子代理执行。支持多种子代理类型，默认为通用编码代理。"""
-        from nocode_agent.tool.kit import _trim_output, logger
+        from nocode_agent.tool.kit import _sanitize_text, _strip_ansi, logger
 
         normalized_type = subagent_type.strip() or "general-purpose"
         agent = subagents.get(normalized_type)
@@ -85,7 +85,7 @@ def make_agent_tool(
         )
         messages = result.get("messages", [])
         summary = _extract_last_ai_text(messages)
-        return _trim_output(summary)
+        return _sanitize_text(_strip_ansi(summary))
 
     return delegate_code
 

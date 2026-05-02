@@ -1,5 +1,5 @@
 import type { Message, ToolMessage } from './hooks/useAppState.js';
-import type { SubagentToolCall } from './types/events.js';
+import type { SubagentRun, SubagentToolCall } from './types/events.js';
 import {
   COLOR,
   padRight,
@@ -17,6 +17,8 @@ type TodoArg = {
   content?: unknown;
   status?: unknown;
 };
+
+const SUBAGENT_TOOL_VISIBLE_LIMIT = 5;
 
 function excerpt(text: string, maxLength = 160): string {
   const singleLine = stripAnsi(text).replace(/\s+/g, ' ').trim();
@@ -132,6 +134,29 @@ function formatToolArgs(args: Record<string, unknown>): string {
     .join(', ');
 }
 
+function getCompactToolArg(args: Record<string, unknown> | undefined): string {
+  const command = getStringArg(args, 'cmd', 'command');
+  if (command) {
+    return command;
+  }
+
+  const path = getStringArg(args, 'path', 'file_path', 'filename', 'ref_id');
+  if (path) {
+    return path;
+  }
+
+  const query = getStringArg(args, 'query', 'pattern', 'q', 'url');
+  if (query) {
+    return query;
+  }
+
+  if (!args || Object.keys(args).length === 0) {
+    return '';
+  }
+
+  return formatToolArgs(args);
+}
+
 function describeToolArgs(tool: ToolMessage): string {
   if (!tool.args || Object.keys(tool.args).length === 0) {
     return '';
@@ -175,13 +200,17 @@ function styleToolRow(content: string, width: number, selected: boolean): string
 }
 
 function renderSubagentTool(toolCall: SubagentToolCall, width: number): string[] {
-  const availableWidth = Math.max(12, width - 8);
-  const toolStatus =
+  const leader = UI_GLYPHS.subagentToolLeader;
+  const availableWidth = Math.max(12, width - visibleLength(leader));
+  const statusText =
     toolCall.status === 'running'
-      ? `${COLOR.warning}执行中...${COLOR.reset}`
-      : `${COLOR.secondary}${excerpt(toolCall.output || '已完成', availableWidth - 12)}${COLOR.reset}`;
-  const text = `${toolCall.name}${toolCall.args && Object.keys(toolCall.args).length > 0 ? ` (${formatToolArgs(toolCall.args)})` : ''}  ${toolStatus}`;
-  return wrapAnsiAware(text, availableWidth).map((line) => `      ${line}`);
+      ? `${COLOR.warning}running${COLOR.reset}`
+      : `${COLOR.secondary}done${COLOR.reset}`;
+  const name = padRight(truncate(toolCall.name, 10), 10);
+  const argWidth = Math.max(8, availableWidth - visibleLength(name) - 9);
+  const arg = truncate(getCompactToolArg(toolCall.args), argWidth);
+  const text = `${name} ${padRight(arg, argWidth)} ${statusText}`;
+  return [truncateAnsiAware(`${COLOR.tool}${leader}${COLOR.reset}${COLOR.secondary}${text}${COLOR.reset}`, width)];
 }
 
 function renderTextMessageLines(message: Extract<Message, { kind: 'message' }>, width: number): string[] {
@@ -257,7 +286,58 @@ function renderToolDetails(message: ToolMessage, width: number, selected: boolea
   return lines;
 }
 
+function getSubagentThreadLabel(message: ToolMessage, subagent?: SubagentRun): string {
+  const requestedThread = getStringArg(message.args, 'thread_id');
+  if (requestedThread) {
+    return requestedThread;
+  }
+
+  const threadId = (subagent?.thread_id || '').trim();
+  if (threadId.startsWith('subagent-named-')) {
+    return threadId.slice('subagent-named-'.length);
+  }
+  return threadId;
+}
+
+function getSubagentTypeLabel(message: ToolMessage, subagent?: SubagentRun): string {
+  return subagent?.subagent_type || getStringArg(message.args, 'subagent_type') || 'subagent';
+}
+
+function getSubagentStatus(message: ToolMessage, subagent?: SubagentRun): string {
+  const running = subagent ? subagent.status === 'running' : message.status === 'running';
+  return running ? `${COLOR.warning}执行中...${COLOR.reset}` : `${COLOR.secondary}已完成${COLOR.reset}`;
+}
+
+function renderDelegateToolMessageLines(message: ToolMessage, width: number, selected: boolean): string[] {
+  const bodyWidth = Math.max(12, width - 2);
+  const marker = selected ? `${UI_GLYPHS.selectedLeader} ` : UI_GLYPHS.toolLeader;
+  const prefix = `${selected ? `${COLOR.selectedBorder}${COLOR.bold}` : COLOR.tool}${marker}${COLOR.reset}`;
+  const subagents = message.subagents && message.subagents.length > 0 ? message.subagents : [undefined];
+
+  return subagents.flatMap((subagent, index) => {
+    const typeLabel = getSubagentTypeLabel(message, subagent);
+    const threadLabel = getSubagentThreadLabel(message, subagent);
+    const status = getSubagentStatus(message, subagent);
+    const headerText = threadLabel
+      ? `${padRight(truncate(typeLabel, 18), 18)} ${truncate(threadLabel, Math.max(8, bodyWidth - 36))} ${status}`
+      : `${typeLabel} ${status}`;
+    const header = styleToolRow(
+      `${prefix}${selected ? `${COLOR.selectedText}${headerText}${COLOR.reset}` : `${COLOR.tool}${headerText}${COLOR.reset}`}`,
+      width,
+      selected,
+    );
+    const toolLines = (subagent?.tool_calls || [])
+      .slice(-SUBAGENT_TOOL_VISIBLE_LIMIT)
+      .flatMap((toolCall) => renderSubagentTool(toolCall, width));
+    return index === 0 ? [header, ...toolLines] : ['', header, ...toolLines];
+  });
+}
+
 function renderToolMessageLines(message: ToolMessage, width: number, selected: boolean): string[] {
+  if (message.name === 'delegate_code') {
+    return renderDelegateToolMessageLines(message, width, selected);
+  }
+
   const bodyWidth = Math.max(12, width - 2);
   const summaryLines = getToolSummaryLines(message);
   const marker = selected ? `${UI_GLYPHS.selectedLeader} ` : UI_GLYPHS.toolLeader;

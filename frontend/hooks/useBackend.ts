@@ -351,7 +351,7 @@ export function useBackend(config: BackendConfig = {}) {
             event.parent_tool_call_id,
             event.subagent_id,
             event.subagent_type,
-            event.subagent_id,
+            '',
           );
           if (!run) {
             break;

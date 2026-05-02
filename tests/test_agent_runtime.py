@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 import httpx
-from langchain_core.messages import AIMessageChunk
+from langchain_core.messages import AIMessage, AIMessageChunk
 
 from nocode_agent.agent.runtime import MainAgentRuntime, _is_retryable_error
 
@@ -66,6 +66,42 @@ class _FakeGraphAgent:
         )
 
 
+class _FakeSubagentTextGraphAgent:
+    def astream(self, current_input, config, stream_mode, subgraphs, version):
+        return _FakeStream(
+            [
+                (
+                    ("tools:parent-tool", "Explore:subgraph"),
+                    "messages",
+                    (
+                        AIMessageChunk(content="subagent text must stay out of main stream"),
+                        {"langgraph_node": "model"},
+                    ),
+                ),
+                (
+                    ("tools:parent-tool", "Explore:subgraph"),
+                    "updates",
+                    {
+                        "model": {
+                            "messages": [
+                                AIMessage(
+                                    content="",
+                                    tool_calls=[
+                                        {
+                                            "name": "read",
+                                            "args": {"path": "src/nocode_agent/agent/runtime.py"},
+                                            "id": "sub-tool",
+                                        }
+                                    ],
+                                )
+                            ]
+                        }
+                    },
+                ),
+            ]
+        )
+
+
 class RetryableErrorTest(unittest.TestCase):
     def test_httpx_read_timeout_is_retryable(self) -> None:
         self.assertTrue(_is_retryable_error(httpx.ReadTimeout("timed out")))
@@ -92,6 +128,24 @@ class MainAgentRuntimeRetryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[0][1], "timed out")
         self.assertEqual(events[1], ("text", "ok"))
         sleep_mock.assert_awaited_once()
+
+    async def test_subagent_message_chunks_do_not_stream_as_main_text(self) -> None:
+        runtime = MainAgentRuntime(
+            agent=_FakeSubagentTextGraphAgent(),
+            checkpointer=_FakeCheckpointer(),
+            interactive_broker=_FakeInteractiveBroker(),
+            main_agent=_FakeMainAgent(),
+        )
+
+        events = [event async for event in runtime.chat("hello")]
+
+        self.assertEqual([event[0] for event in events], ["subagent_start", "subagent_tool_start"])
+        self.assertNotIn(
+            ("text", "subagent text must stay out of main stream"),
+            events,
+        )
+        self.assertEqual(events[0][1]["subagent_type"], "Explore")
+        self.assertEqual(events[1][1]["name"], "read")
 
 
 if __name__ == "__main__":
