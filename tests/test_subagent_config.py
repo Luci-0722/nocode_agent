@@ -30,7 +30,7 @@ from nocode_agent.agent.subagents import (  # noqa: E402
     init_agent_registry,
     resolve_agent_tools,
 )
-from langchain_core.messages import AIMessage  # noqa: E402
+from langchain_core.messages import AIMessage, ToolMessage  # noqa: E402
 from nocode_agent.tool.delegate import make_agent_tool  # noqa: E402
 from nocode_agent.tool.registry import build_subagent_type_description  # noqa: E402
 
@@ -207,22 +207,107 @@ You are the project reviewer.
         long_summary = "\x1b[31m" + ("x" * 13_000) + "\x1b[0m"
 
         class FakeAgent:
-            async def ainvoke(self, payload, config=None):  # noqa: ANN001
-                return {"messages": [AIMessage(content=long_summary)]}
+            async def astream(self, payload, config=None, stream_mode=None, version=None):  # noqa: ANN001
+                yield (
+                    "updates",
+                    {"model": {"messages": [AIMessage(content=long_summary)]}},
+                )
 
         delegate_code = make_agent_tool({"Explore": FakeAgent()})
-        result = asyncio.run(
-            delegate_code.ainvoke(
-                {
-                    "subagent_type": "Explore",
-                    "task": "return a long summary",
-                }
+        events: list[dict] = []
+        with patch("langgraph.config.get_stream_writer", return_value=events.append):
+            result = asyncio.run(
+                delegate_code.ainvoke(
+                    {
+                        "type": "tool_call",
+                        "name": "delegate_code",
+                        "args": {
+                            "subagent_type": "Explore",
+                            "task": "return a long summary",
+                        },
+                        "id": "parent-tool",
+                    }
+                )
             )
-        )
 
-        self.assertEqual(result, "x" * 13_000)
-        self.assertNotIn("已截断", result)
-        self.assertNotIn("\x1b[31m", result)
+        self.assertEqual(result.content, "x" * 13_000)
+        self.assertNotIn("已截断", result.content)
+        self.assertNotIn("\x1b[31m", result.content)
+        self.assertEqual(events[0]["type"], "subagent_start")
+        self.assertEqual(events[-1]["type"], "subagent_finish")
+
+    def test_delegate_code_streams_subagent_tool_events(self) -> None:
+        class FakeAgent:
+            async def astream(self, payload, config=None, stream_mode=None, version=None):  # noqa: ANN001
+                yield (
+                    "updates",
+                    {
+                        "model": {
+                            "messages": [
+                                AIMessage(
+                                    content="",
+                                    tool_calls=[
+                                        {
+                                            "name": "read",
+                                            "args": {"path": "src/nocode_agent/tool/delegate.py"},
+                                            "id": "sub-tool",
+                                        }
+                                    ],
+                                )
+                            ]
+                        }
+                    },
+                )
+                yield (
+                    "updates",
+                    {
+                        "tools": {
+                            "messages": [
+                                ToolMessage(
+                                    content="\x1b[32mfile content\x1b[0m",
+                                    name="read",
+                                    tool_call_id="sub-tool",
+                                )
+                            ]
+                        }
+                    },
+                )
+                yield (
+                    "updates",
+                    {"model": {"messages": [AIMessage(content="done")]}},
+                )
+
+        delegate_code = make_agent_tool({"Explore": FakeAgent()})
+        events: list[dict] = []
+        with patch("langgraph.config.get_stream_writer", return_value=events.append):
+            result = asyncio.run(
+                delegate_code.ainvoke(
+                    {
+                        "type": "tool_call",
+                        "name": "delegate_code",
+                        "args": {
+                            "subagent_type": "Explore",
+                            "task": "inspect the delegate tool",
+                            "thread_id": "named-thread",
+                        },
+                        "id": "parent-tool",
+                    }
+                )
+            )
+
+        self.assertEqual(result.content, "done")
+        self.assertEqual(
+            [event["type"] for event in events],
+            ["subagent_start", "subagent_tool_start", "subagent_tool_end", "subagent_finish"],
+        )
+        for event in events:
+            self.assertEqual(event["parent_tool_call_id"], "parent-tool")
+            self.assertEqual(event["subagent_id"], "subagent-named-named-thread")
+            self.assertEqual(event["subagent_type"], "Explore")
+        self.assertEqual(events[1]["name"], "read")
+        self.assertEqual(events[1]["args"], {"path": "src/nocode_agent/tool/delegate.py"})
+        self.assertEqual(events[2]["tool_call_id"], "sub-tool")
+        self.assertEqual(events[2]["output"], "file content")
 
 
 if __name__ == "__main__":
