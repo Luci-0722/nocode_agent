@@ -155,15 +155,15 @@ export function useBackend(config: BackendConfig = {}) {
   const applyStatusPayload = useCallback(
     (payload: StatusPayload) => {
       setStatus({
-        threadId: payload.thread_id,
-        model: payload.model,
-        modelName: payload.model_name || '',
-        subagentModel: payload.subagent_model,
-        reasoningEffort: payload.reasoning_effort,
-        cwd: payload.cwd,
-        contextWindow: payload.context_window,
-        estimatedTokens: payload.estimated_tokens || 0,
-        tokensLeftPercent: payload.tokens_left_percent,
+        ...(payload.thread_id ? { threadId: payload.thread_id } : {}),
+        ...(payload.model ? { model: payload.model } : {}),
+        ...(payload.model_name !== undefined ? { modelName: payload.model_name || '' } : {}),
+        ...(payload.subagent_model ? { subagentModel: payload.subagent_model } : {}),
+        ...(payload.reasoning_effort ? { reasoningEffort: payload.reasoning_effort } : {}),
+        ...(payload.cwd ? { cwd: payload.cwd } : {}),
+        ...(payload.context_window !== undefined ? { contextWindow: payload.context_window } : {}),
+        ...(payload.estimated_tokens !== undefined ? { estimatedTokens: payload.estimated_tokens } : {}),
+        ...(payload.tokens_left_percent !== undefined ? { tokensLeftPercent: payload.tokens_left_percent } : {}),
       });
     },
     [setStatus],

@@ -432,7 +432,7 @@ async def main() -> int:
             if _stream_task and not _stream_task.done():
                 _stream_task.cancel()
             else:
-                _emit({"type": "status", "message": "idle"})
+                _emit(_build_status_event(agent, config))
             continue
 
         agent, should_continue = await _handle_message(agent, payload, config)

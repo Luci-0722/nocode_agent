@@ -107,7 +107,7 @@ export default function Transcript() {
   return (
     <Box flexDirection="column" paddingX={1}>
       <Box flexDirection="column">
-        {!threadId ? (
+        {!threadId && visible.length === 0 ? (
           <Box flexDirection="column">
             {Array.from({ length: loadingTopSpacing }).map((_, index) => (
               <Text key={`loading-space-${index}`}> </Text>

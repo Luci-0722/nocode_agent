@@ -287,6 +287,107 @@ class BackendStartupSmokeTest(unittest.TestCase):
 
 @unittest.skipIf(sys.platform == "win32", "当前冒烟测试依赖 POSIX PTY")
 class TuiBackendErrorVisibilityTest(unittest.TestCase):
+    def test_tui_keeps_status_snapshot_when_backend_sends_partial_idle_status(self) -> None:
+        _ensure_frontend_built()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            fake_backend = temp_root / "fake-python"
+            fake_backend.write_text(
+                textwrap.dedent(
+                    """\
+                    #!/usr/bin/env bash
+                    set -euo pipefail
+                    printf '{"type":"hello","thread_id":"thread-test","model":"glm-5","model_name":"qwen/glm-5","subagent_model":"glm-5","reasoning_effort":"","cwd":"%s","context_window":128000,"tokens_left_percent":100}\\n' "$PWD"
+                    while IFS= read -r line; do
+                      if [[ "$line" == *'"type":"prompt"'* ]]; then
+                        printf '{"type":"text","delta":"working"}\\n'
+                      elif [[ "$line" == *'"type":"cancel"'* ]]; then
+                        printf '{"type":"status","message":"idle"}\\n'
+                      fi
+                    done
+                    """
+                ),
+                encoding="utf-8",
+            )
+            fake_backend.chmod(fake_backend.stat().st_mode | stat.S_IXUSR)
+
+            env = os.environ.copy()
+            env["PYTHON_BIN"] = str(fake_backend)
+            env["NOCODE_SOURCE_ROOT"] = str(temp_root)
+            env["NOCODE_LOG_FILE"] = str(temp_root / "nocode.log")
+            env["TERM"] = env.get("TERM", "xterm-256color")
+
+            master_fd, slave_fd = pty.openpty()
+            process = subprocess.Popen(
+                ["node", "frontend/dist/index.js"],
+                cwd=REPO_ROOT,
+                env=env,
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                close_fds=True,
+            )
+            os.close(slave_fd)
+
+            output = bytearray()
+            after_cancel_output = bytearray()
+            try:
+                deadline = time.monotonic() + 15
+                while time.monotonic() < deadline:
+                    ready, _, _ = select.select([master_fd], [], [], 0.5)
+                    if ready:
+                        chunk = os.read(master_fd, 8192)
+                        if not chunk:
+                            break
+                        output.extend(chunk)
+                        decoded = _strip_ansi(output.decode("utf-8", errors="ignore"))
+                        if "thread: ead-test" in decoded and "cwd: " in decoded:
+                            break
+                    if process.poll() is not None:
+                        break
+
+                os.write(master_fd, b"hello\r")
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    ready, _, _ = select.select([master_fd], [], [], 0.2)
+                    if ready:
+                        chunk = os.read(master_fd, 8192)
+                        if not chunk:
+                            break
+                        output.extend(chunk)
+                        if "Generating" in _strip_ansi(output.decode("utf-8", errors="ignore")):
+                            break
+
+                os.write(master_fd, b"\x1b")
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    ready, _, _ = select.select([master_fd], [], [], 0.2)
+                    if ready:
+                        chunk = os.read(master_fd, 8192)
+                        if not chunk:
+                            break
+                        after_cancel_output.extend(chunk)
+                        decoded_after_cancel = _strip_ansi(after_cancel_output.decode("utf-8", errors="ignore"))
+                        if "thread: ead-test" in decoded_after_cancel:
+                            break
+                    if process.poll() is not None:
+                        break
+            finally:
+                if process.poll() is None:
+                    os.write(master_fd, b"\x03")
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
+                os.close(master_fd)
+
+            decoded = _strip_ansi(output.decode("utf-8", errors="ignore"))
+            decoded_after_cancel = _strip_ansi(after_cancel_output.decode("utf-8", errors="ignore"))
+            self.assertIn("thread: ead-test", decoded)
+            self.assertNotIn("undefined% left", decoded_after_cancel)
+            self.assertNotIn("Backend loading", decoded_after_cancel)
+
     def test_tui_shows_backend_stderr_excerpt_and_log_path_on_fatal(self) -> None:
         _ensure_frontend_built()
         with tempfile.TemporaryDirectory() as temp_dir:
