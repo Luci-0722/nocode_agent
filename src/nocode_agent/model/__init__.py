@@ -1,6 +1,6 @@
 """模型相关公共导出。"""
 
-from .factory import build_model, build_no_proxy_mounts, resolve_context_window
+from .factory import build_model, build_no_proxy_mounts, preload_models_dev, resolve_context_window
 from .fetch_models import (
     detect_provider_type,
     fetch_all_providers,
@@ -10,6 +10,7 @@ from .fetch_models import (
 __all__ = [
     "build_model",
     "build_no_proxy_mounts",
+    "preload_models_dev",
     "resolve_context_window",
     "detect_provider_type",
     "fetch_all_providers",

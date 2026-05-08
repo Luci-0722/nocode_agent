@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
-from nocode_agent.model import build_model, resolve_context_window
+from nocode_agent.model import build_model, preload_models_dev, resolve_context_window
 from nocode_agent.persistence import CheckpointerManager, resolve_checkpoint_path
 from nocode_agent.prompt import DynamicPromptMiddleware
 from nocode_agent.runtime.interaction import InteractiveSessionBroker
@@ -37,6 +37,7 @@ class MainAgent:
         subagent_model_name: str = "",
         context_window: int = 128_000,
         reasoning_effort: str = "",
+        stream_idle_timeout: float = 120.0,
     ):
         self._agent = agent
         self._checkpointer = checkpointer
@@ -51,6 +52,7 @@ class MainAgent:
             checkpointer=self._checkpointer,
             interactive_broker=self._interactive_broker,
             main_agent=self,
+            stream_idle_timeout=stream_idle_timeout,
         )
 
     @staticmethod
@@ -206,6 +208,7 @@ async def create_mainagent(
         "Creating MainAgent: model=%s, base_url=%s, max_tokens=%d, temperature=%.2f, proxy=%s, no_proxy=%s, timeout=%.1fs, ssl_verify=%s",
         model, base_url, max_tokens, temperature, proxy or "(none)", ",".join(no_proxy or []) or "(none)", request_timeout, ssl_verify,
     )
+    preload_models_dev()
     context_window = resolve_context_window(model)
     checkpointer = CheckpointerManager(resolve_checkpoint_path(persistence_config))
     await checkpointer.ensure_setup()
@@ -298,7 +301,7 @@ async def create_mainagent(
         *core_tools,
         *skill_tools,
         *mcp_tools,
-        make_agent_tool(subagents_map, agent_definitions=get_all_agent_definitions()),
+        make_agent_tool(subagents_map, agent_definitions=get_all_agent_definitions(), stream_idle_timeout=stream_idle_timeout),
     ]
 
     # DynamicPromptMiddleware 放在最前面，确保每次调用前刷新 system prompt
@@ -333,4 +336,5 @@ async def create_mainagent(
         subagent_model_name=subagent_model or model,
         context_window=context_window,
         reasoning_effort=reasoning_effort,
+        stream_idle_timeout=stream_idle_timeout,
     )

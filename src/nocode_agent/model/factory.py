@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 import logging
+import threading
+import time
+import urllib.request
 from typing import Any
 
 import httpx
@@ -48,10 +52,65 @@ _CONTEXT_WINDOWS: dict[str, int] = {
     "o1": 200_000,
 }
 
+# ── models.dev 远程上下文窗口查询 ──────────────────────────────────
+_MODELS_DEV_URL = "https://models.dev/api.json"
+_CACHE_TTL = 86_400  # 24 hours
+
+# 进程级缓存: {model_id_lower: (context_window, timestamp)}
+_models_dev_cache: dict[str, tuple[int, float]] = {}
+_cache_lock = threading.Lock()
+
+
+def _load_models_dev() -> None:
+    """Fetch and cache context window data from models.dev."""
+    try:
+        req = urllib.request.Request(
+            _MODELS_DEV_URL, headers={"User-Agent": "nocode-agent"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+        now = time.time()
+        with _cache_lock:
+            for provider_data in data.values():
+                if not isinstance(provider_data, dict):
+                    continue
+                for mid, m in provider_data.get("models", {}).items():
+                    ctx = (m.get("limit") or {}).get("context")
+                    if ctx and isinstance(ctx, int):
+                        _models_dev_cache[mid.lower()] = (ctx, now)
+        logger.debug("Loaded models.dev context data, %d models cached", len(_models_dev_cache))
+    except Exception:
+        logger.debug("Failed to fetch models.dev data", exc_info=True)
+
+
+def preload_models_dev() -> None:
+    """Trigger background preload of models.dev data."""
+    if _models_dev_cache:
+        return
+    threading.Thread(target=_load_models_dev, daemon=True).start()
+
+
+def _lookup_models_dev(model: str) -> int | None:
+    """Look up context window from models.dev cache."""
+    model_lower = model.lower()
+    with _cache_lock:
+        if model_lower in _models_dev_cache:
+            ctx, ts = _models_dev_cache[model_lower]
+            if time.time() - ts < _CACHE_TTL:
+                return ctx
+    # Cache miss or expired — trigger background refresh
+    threading.Thread(target=_load_models_dev, daemon=True).start()
+    return None
+
 
 def resolve_context_window(model: str) -> int:
     """根据模型名称解析上下文窗口大小。"""
     model_lower = model.lower()
+    # 1. Try models.dev cache (exact match)
+    dev_ctx = _lookup_models_dev(model_lower)
+    if dev_ctx is not None:
+        return dev_ctx
+    # 2. Fallback to hardcoded table (substring match)
     for key in sorted(_CONTEXT_WINDOWS, key=len, reverse=True):
         if key in model_lower:
             return _CONTEXT_WINDOWS[key]
