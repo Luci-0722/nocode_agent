@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated, Any
 from uuid import uuid4
 
@@ -52,6 +53,7 @@ def make_agent_tool(
     subagents: dict[str, Any],
     agent_definitions: list[Any] | None = None,
     name: str = "delegate_code",
+    stream_idle_timeout: float = 120.0,
 ) -> Any:
     """创建多类型子代理委派工具。"""
     subagent_type_description = build_subagent_type_description(agent_definitions)
@@ -118,52 +120,77 @@ def make_agent_tool(
         )
 
         messages: list[BaseMessage] = []
-        async for chunk in agent.astream(
+        stream_iter = agent.astream(
             {"messages": [{"role": "user", "content": prompt}]},
             config={"configurable": {"thread_id": resolved_thread_id}},
             stream_mode=["updates"],
             version="v2",
-        ):
-            chunk_type, chunk_data = _coerce_stream_chunk(chunk)
-            if chunk_type != "updates" or not isinstance(chunk_data, dict):
-                continue
+        ).__aiter__()
+        next_task: asyncio.Task[Any] | None = asyncio.ensure_future(stream_iter.__anext__())
+        try:
+            while next_task:
+                try:
+                    chunk = await asyncio.wait_for(next_task, timeout=stream_idle_timeout)
+                except StopAsyncIteration:
+                    next_task = None
+                    break
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Subagent stream idle timeout (%.1fs): type=%s, thread=%s",
+                        stream_idle_timeout,
+                        normalized_type,
+                        resolved_thread_id,
+                    )
+                    raise
+                next_task = asyncio.ensure_future(stream_iter.__anext__())
 
-            for step, data in chunk_data.items():
-                if not isinstance(data, dict):
+                chunk_type, chunk_data = _coerce_stream_chunk(chunk)
+                if chunk_type != "updates" or not isinstance(chunk_data, dict):
                     continue
-                step_messages = data.get("messages", [])
-                if not isinstance(step_messages, list):
-                    continue
 
-                for message in step_messages:
-                    if isinstance(message, BaseMessage):
-                        messages.append(message)
+                for step, data in chunk_data.items():
+                    if not isinstance(data, dict):
+                        continue
+                    step_messages = data.get("messages", [])
+                    if not isinstance(step_messages, list):
+                        continue
 
-                    if step == "model" and isinstance(message, AIMessage):
-                        for sub_tool_call in message.tool_calls:
+                    for message in step_messages:
+                        if isinstance(message, BaseMessage):
+                            messages.append(message)
+
+                        if step == "model" and isinstance(message, AIMessage):
+                            for sub_tool_call in message.tool_calls:
+                                _emit_subagent_event(
+                                    writer,
+                                    {
+                                        "type": "subagent_tool_start",
+                                        **base_event,
+                                        "name": sub_tool_call["name"],
+                                        "args": sub_tool_call.get("args", {}),
+                                        "tool_call_id": sub_tool_call.get("id", ""),
+                                    },
+                                )
+                            continue
+
+                        if step == "tools" and isinstance(message, ToolMessage):
                             _emit_subagent_event(
                                 writer,
                                 {
-                                    "type": "subagent_tool_start",
+                                    "type": "subagent_tool_end",
                                     **base_event,
-                                    "name": sub_tool_call["name"],
-                                    "args": sub_tool_call.get("args", {}),
-                                    "tool_call_id": sub_tool_call.get("id", ""),
+                                    "name": message.name or "tool",
+                                    "output": _sanitize_text(_strip_ansi(_stringify_message_content(message.content))),
+                                    "tool_call_id": getattr(message, "tool_call_id", ""),
                                 },
                             )
-                        continue
-
-                    if step == "tools" and isinstance(message, ToolMessage):
-                        _emit_subagent_event(
-                            writer,
-                            {
-                                "type": "subagent_tool_end",
-                                **base_event,
-                                "name": message.name or "tool",
-                                "output": _sanitize_text(_strip_ansi(_stringify_message_content(message.content))),
-                                "tool_call_id": getattr(message, "tool_call_id", ""),
-                            },
-                        )
+        finally:
+            if next_task and not next_task.done():
+                next_task.cancel()
+            try:
+                await stream_iter.aclose()
+            except Exception:
+                pass
 
         summary = _extract_last_ai_text(messages)
         cleaned_summary = _sanitize_text(_strip_ansi(summary))

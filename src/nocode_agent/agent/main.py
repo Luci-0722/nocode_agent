@@ -202,6 +202,7 @@ async def create_mainagent(
     no_proxy: list[str] | None = None,
     request_timeout: float = 90.0,
     ssl_verify: bool = True,
+    stream_idle_timeout: float = 120.0,
 ) -> MainAgent:
     """创建主代理和代码子代理。"""
     logger.info(

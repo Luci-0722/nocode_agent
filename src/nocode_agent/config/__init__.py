@@ -324,6 +324,20 @@ def resolve_request_timeout(config: dict[str, Any], default: float = 90.0) -> fl
     return timeout
 
 
+def resolve_stream_idle_timeout(config: dict[str, Any], default: float = 120.0) -> float:
+    """统一解析流式响应空闲超时时间（秒）。"""
+    raw_value = config.get("stream_idle_timeout", default)
+    try:
+        timeout = float(raw_value)
+    except (TypeError, ValueError):
+        logger.warning("Invalid stream_idle_timeout=%r, fallback to %.1f", raw_value, default)
+        return default
+    if timeout <= 0:
+        logger.warning("Non-positive stream_idle_timeout=%r, fallback to %.1f", raw_value, default)
+        return default
+    return timeout
+
+
 def parse_model_name(model_name: str) -> tuple[str, str]:
     """解析 "provider/model_id" 格式的模型名称。
 
@@ -383,6 +397,7 @@ __all__ = [
     "resolve_no_proxy",
     "resolve_proxy",
     "resolve_request_timeout",
+    "resolve_stream_idle_timeout",
     "parse_model_name",
     "resolve_model_config",
 ]

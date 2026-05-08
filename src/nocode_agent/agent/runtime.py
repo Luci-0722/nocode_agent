@@ -334,11 +334,13 @@ class MainAgentRuntime:
         checkpointer: CheckpointerManager,
         interactive_broker: InteractiveSessionBroker,
         main_agent: Any,
+        stream_idle_timeout: float = 120.0,
     ) -> None:
         self._agent = agent
         self._checkpointer = checkpointer
         self._interactive_broker = interactive_broker
         self._main_agent = main_agent
+        self._stream_idle_timeout = stream_idle_timeout
 
     @property
     def _thread_id(self) -> str:
@@ -424,10 +426,18 @@ class MainAgentRuntime:
                 # 处理模型流，custom 事件通过 stream_mode="custom" 直接进入同一流。
                 while next_chunk_task:
                     try:
-                        chunk = await next_chunk_task
+                        chunk = await asyncio.wait_for(next_chunk_task, timeout=self._stream_idle_timeout)
                     except StopAsyncIteration:
                         next_chunk_task = None
                         break
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            "Stream idle timeout (%.1fs): thread=%s, attempt=%d",
+                            self._stream_idle_timeout,
+                            self._thread_id[:20],
+                            attempt + 1,
+                        )
+                        raise
 
                     next_chunk_task = asyncio.create_task(stream_iter.__anext__())
                     # LangGraph v2 + subgraphs=True + 多 stream_mode 时
